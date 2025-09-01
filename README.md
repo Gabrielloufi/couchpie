@@ -1,11 +1,10 @@
-                      _     ____  _      
-  ___ ___  _   _  ___| |__ |  _ \(_) ___ 
- / __/ _ \| | | |/ __| '_ \| |_) | |/ _ \
-| (_| (_) | |_| | (__| | | |  __/| |  __/
+                      _     _____ _      
+                     | |   |  __ (_)     
+  ___ ___  _   _  ___| |__ | |__) |  ___ 
+ / __/ _ \| | | |/ __| '_ \|  ___/ |/ _ \
+| (_| (_) | |_| | (__| | | | |   | |  __/
  \___\___/ \__,_|\___|_| |_|_|   |_|\___|
-                                         
-SmartTV killer. Portable Raspberry Pi media center with Streamings, Steam Link, Moonlight, Kodi, and Tailscale for home or travel.
-
+ 
 # CouchPie 🛋️🍓🍰
 
 ** Smart TV killer. Portable media hub. Pi-powered freedom machine. **
@@ -20,6 +19,8 @@ CouchPie turns your Raspberry Pi 5 into a fully-customizable entertainment cente
 * Runs fully offline OR remotely with [Tailscale](https://tailscale.com/) for secure remote access
 * Integrates with Alexa using the Manual Smart Home Skill and Home Assistant (Stage 3)
 * Can be taken anywhere, broadcast its own Wi-Fi, and act like a portable smart TV system
+
+SmartTV killer. Portable Raspberry Pi media center with Streamings, Steam Link, Moonlight, Kodi, and Tailscale for home or travel.
 
 ---
 
