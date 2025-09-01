@@ -1,15 +1,8 @@
-                      _     _____ _      
-                     | |   |  __ (_)     
-  ___ ___  _   _  ___| |__ | |__) |  ___ 
- / __/ _ \| | | |/ __| '_ \|  ___/ |/ _ \
-| (_| (_) | |_| | (__| | | | |   | |  __/
- \___\___/ \__,_|\___|_| |_|_|   |_|\___|
- 
-# CouchPie 🛋️🍓🍰
+# couchPie 🛋️🍓🍰
 
-** Smart TV killer. Portable media hub. Pi-powered freedom machine. **
+**Smart TV killer. Portable media hub. Pi-powered freedom machine.**
 
-CouchPie turns your Raspberry Pi 5 into a fully-customizable entertainment center that:
+couchPie turns your Raspberry Pi 5 into a fully-customizable entertainment center that:
 
 * Streams games from your PC using [Sunshine](https://github.com/LizardByte/Sunshine) and [Moonlight](https://moonlight-stream.org/)
 * Plays media files from your PC over the network via SMB
@@ -122,7 +115,7 @@ Contributions for other languages are welcome!
 
 ---
 
-## ✨ Why CouchPie?
+## ✨ Why couchPie?
 
 Because it lets you:
 
