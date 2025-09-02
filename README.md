@@ -1,8 +1,8 @@
-# couchPie 🛋️🍓🍰
+# couchPie 🛋️🥧
 
 **Smart TV killer. Portable media hub. Pi-powered freedom machine.**
 
-couchPie turns your Raspberry Pi 5 into a fully-customizable entertainment center that:
+couchPie turns your Raspberry Pi 4/5 into a fully-customizable entertainment center that:
 
 * Streams games from your PC using [Sunshine](https://github.com/LizardByte/Sunshine) and [Moonlight](https://moonlight-stream.org/)
 * Plays media files from your PC over the network via SMB
@@ -12,8 +12,6 @@ couchPie turns your Raspberry Pi 5 into a fully-customizable entertainment cente
 * Runs fully offline OR remotely with [Tailscale](https://tailscale.com/) for secure remote access
 * Integrates with Alexa using the Manual Smart Home Skill and Home Assistant (Stage 3)
 * Can be taken anywhere, broadcast its own Wi-Fi, and act like a portable smart TV system
-
-SmartTV killer. Portable Raspberry Pi media center with Streamings, Steam Link, Moonlight, Kodi, and Tailscale for home or travel.
 
 ---
 
@@ -91,7 +89,7 @@ You’ll be able to:
 
 ## 📚 License
 
-MIT License. Project does not redistribute Raspberry Pi OS images.
+No License for now. Project does not redistribute Raspberry Pi OS images.
 
 ---
 

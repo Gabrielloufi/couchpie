@@ -1,0 +1,5 @@
+# Dummy docker-compose.yml for dev container stack
+version: '3.8'
+services:
+  dummy:
+    image: scratch
