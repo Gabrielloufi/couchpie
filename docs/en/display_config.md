@@ -1,119 +1,109 @@
-# 🖥️ HDMI Resolution & Display Configuration (Raspberry Pi OS Bookworm)
+# CouchPie HDMI, DRM and Widevine Configuration Guide
 
-## 📘 Overview
-When using **Raspberry Pi OS (Bookworm)**, the system’s display resolution is no longer fully controlled by `/boot/firmware/config.txt`.  
-The new **Wayland-based desktop** uses a user-level configuration file (`~/.config/monitors.xml`) to override display modes at login.
+## Summary
+This document records the troubleshooting steps and verified findings regarding **HDCP and Widevine DRM playback** on Raspberry Pi 5 running **Raspberry Pi OS (Bookworm)** with Chromium.
 
-This means that even if you manually force `1920x1080@60Hz` in the firmware or kernel, the GUI may still load a **lower EDID-preferred resolution** (e.g., 1366×768) unless explicitly changed in the OS Preferences.
-
----
-
-## 🧠 Root Cause
-Bookworm introduced:
-- **Wayland + KMS (Kernel Mode Setting)** for unified video handling.
-- A new **Display Preferences GUI** (`Preferences → Display → Resolution`) that saves resolution per user.
-- Per-user configuration stored in:
-  ```bash
-  ~/.config/monitors.xml
-  ```
-  This XML file overrides any lower-level kernel or firmware setting once the GUI session starts.
+Prime Video and other streaming services limit playback to **Standard Definition (SD)** on the Pi because the HDMI stack currently lacks **HDCP 2.x negotiation support**, even though Widevine DRM (software-level, L3) functions properly.
 
 ---
 
-## 🔌 Symptoms
-- `config.txt` correctly defines `hdmi_group`, `hdmi_mode`, etc.
-- `kmsprint` or `modetest` shows HDMI-A-1 at 1366×768.
-- GUI reports “1366×768 (60Hz)” even though firmware forces 1080p.
-- Streaming apps (e.g., Prime Video, Netflix) display messages like:
-  > “Your video will play in Standard Definition because your computer hardware, HDMI cables, and display must all meet HDCP requirements for HD video.”
+## Verified Configuration
 
----
+**OS**: Debian 12 (Bookworm) – Raspberry Pi 5 build  
+**Browser**: Chromium 140.0.7339.207 (arm64)  
+**DRM Library**: Widevine 4.10.2662.3 (L3, software-secure)
 
-## ✅ Fix (Preferred Method via GUI)
-1. Open:
-   ```
-   Menu → Preferences → Display
-   ```
-2. Select:
-   ```
-   HDMI-A-1 → Resolution → 1920 × 1080 @ 60Hz
-   ```
-3. Click:
-   ```
-   Apply → Save
-   ```
-4. Reboot:
-   ```bash
-   sudo reboot
-   ```
-
-This will regenerate or update your user’s `~/.config/monitors.xml` with the new mode and ensure it persists.
-
----
-
-## 🧮 Alternate Fix (Manual XML)
-If you wish to pre-configure it (for image shipping or kiosk setups):
-
-Create `/etc/xdg/monitors.xml` or `/usr/share/xdg/monitors.xml` with this content:
-
-```xml
-<monitors version="2">
-  <configuration>
-    <monitors>
-      <monitor>
-        <connector>HDMI-A-1</connector>
-        <mode>1920x1080</mode>
-        <rate>60.0</rate>
-        <primary>yes</primary>
-      </monitor>
-    </monitors>
-  </configuration>
-</monitors>
-```
-
-This enforces a **system-wide fallback**, even if no per-user `monitors.xml` exists.
-
----
-
-## 🤏 Fail-Safe Option (Firmware Level)
-You can still add a firmware-level fallback in `/boot/firmware/config.txt`:
-
+### HDMI Detection
 ```bash
-hdmi_group=1
-hdmi_mode=16      # 1080p60
-hdmi_force_hotplug=1
+kmsprint | grep HDMI
+```
+→ `HDMI-A-1` (connected) — 1366×768 initially, later adjusted to 1920×1080 @ 60 Hz.
+
+### Resolution Fix
+Some systems remain stuck at 1366×768 due to saved preferences.  
+Resolved by adjusting the display mode in the **Raspberry Pi OS GUI → Preferences → Screen Configuration** tool, then saving as the default.
+
+No `~/.config/monitors.xml` file was present, confirming system-level persistence.
+
+---
+
+## DRM & HDCP Diagnostics
+
+### Kernel Driver
+```bash
+lsmod | grep vc4
+```
+shows normal vc4 + drm helper modules.
+
+### EDID & HDCP Capability
+```bash
+sudo cat /sys/class/drm/card1-HDMI-A-1/edid | edid-decode | grep -i hdcp
+```
+No HDCP extension block → HDMI driver does not expose HDCP capability.
+
+### DRM Connector Enumeration
+```bash
+for f in /sys/class/drm/*/status; do echo "$f: $(cat $f 2>/dev/null)"; done
+```
+→ `/sys/class/drm/card1-HDMI-A-1: connected`
+
+### Widevine Verification
+```bash
+dpkg -s libwidevinecdm0 | grep -i version
+chromium-browser --enable-widevine --no-sandbox --enable-logging=stderr --v=1 2>&1 | grep -i widevine
+```
+Output confirms:
+```
+Registering bundled Widevine 4.10.2662.3
 ```
 
-This ensures that even if the display manager fails, the framebuffer initializes in 1080p.
+**Interpretation:** Widevine L3 loaded successfully; HDCP unavailable → only SD content permitted by DRM-restricted services (Prime, Netflix, Disney+).
 
 ---
 
-## 🔖 Debug Commands
-
-| Purpose | Command |
-|----------|----------|
-| Detect connected displays | `kmsprint | grep HDMI` |
-| Inspect detailed mode info | `modetest | grep -A12 "HDMI-A-1"` |
-| List kernel modes | `sudo cat /sys/class/drm/card0-HDMI-A-1/modes` |
-| Check framebuffer | `fbset -s` |
+## Chromium Behavior
+- `chrome://components` shows **no separate Widevine CDM entry** — expected on Raspberry Pi builds.
+- Logs confirm L3 registration but no hardware DRM or HDCP handshake.
+- Prime Video enforces SD output with message:
+  > *“Your video will play in Standard Definition because your computer hardware, HDMI cables, and display must all meet content protection (HDCP) requirements for HD video.”*
 
 ---
 
-## ⚙️ Notes
-- Bookworm may **ignore firmware HDMI modes** if Wayland has an active session preference.
-- The **absence of `~/.config/monitors.xml`** means defaults are still active — no override yet.
-- If you want CouchPie to boot always in 1080p for all users, prefer the **system-wide XML** approach above.
+## Workarounds & Recommendations
+
+### For HD Streaming
+- **Use TV’s built-in apps or external streamer** (Fire TV, Chromecast, Android TV).  
+  Raspberry Pi’s HDMI controller cannot negotiate HDCP 2.x; firmware support is not public.
+
+### For Local Media Playback
+- Use **VLC**, **MPV**, or **Kodi** for 1080p/4K local playback.  
+  Install InputStream Adaptive for adaptive streaming:
+  ```bash
+  sudo apt install -y kodi kodi-inputstream-adaptive
+  ```
+
+### Optional: Upscale SD Streams
+```bash
+chromium-browser --enable-widevine --use-gl=egl --use-angle=opengles \
+  --enable-features=VaapiVideoDecoder --ignore-gpu-blocklist \
+  --force-device-scale-factor=1.5
+```
+This enhances visual output but doesn’t unlock HDCP.
 
 ---
 
-### 📟 Summary
-| Layer | File | Purpose | Priority |
-|--------|------|----------|-----------|
-| GUI (Wayland) | `~/.config/monitors.xml` | User resolution settings | 🥇 Highest |
-| System-wide | `/etc/xdg/monitors.xml` | Default fallback | 🥈 |
-| Firmware | `/boot/firmware/config.txt` | Hardware-level fallback | 🥉 |
+## Summary of Findings
+| Component | Status | Notes |
+|------------|--------|-------|
+| HDMI link | ✅ Connected | 1080p60 confirmed |
+| VC4 driver | ✅ Loaded | Standard KMS operation |
+| EDID HDCP | ❌ Missing | No HDCP capability in driver |
+| Widevine CDM | ✅ Loaded (L3) | Software-secure only |
+| Prime Video HD | ❌ Blocked by HDCP | Limited to SD playback |
 
 ---
 
-📎 *Next step:*  
-We'll later explore creating a **post-boot check script** for CouchPie that ensures HDMI-A-1 runs at 1080p before launching the front-end.
+## Conclusion
+Chromium on Raspberry Pi (Bookworm) successfully loads Widevine L3 DRM but cannot complete an HDCP handshake through the vc4 HDMI driver.  
+Until Raspberry Pi OS or the VC4 KMS stack gains HDCP 2.x support, protected streaming platforms (e.g., Prime Video, Netflix) will remain limited to SD resolution.  
+CouchPie will maintain this configuration as “known limitation – DRM L3 only.”
