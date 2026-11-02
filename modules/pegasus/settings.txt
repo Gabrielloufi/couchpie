@@ -1,0 +1,3 @@
+general.locale: pt-BR
+general.theme: themes/kiosk-tv/
+general.hide-delay-after-launch: -1

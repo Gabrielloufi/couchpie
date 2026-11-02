@@ -2,6 +2,8 @@
 
 Welcome to **couchPie 🛋️🥧** — the open-source Smart TV killer couch companion.  
 This guide will help you set up a development environment on **Windows + WSL2** so you can build and test couchPie before running it on a Raspberry Pi.
+
+> To install couchPie on a Raspberry Pi, see [install.md](install.md) instead.
 note: This is my current build since this is a side project.
 
 ---

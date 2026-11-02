@@ -1,0 +1,150 @@
+#!/usr/bin/python3 -I
+"""Draws the Pegasus tile images that aren't app icons: logo tiles and power.
+Logos come from logos/; writes media/*.png next to this script. Run it again
+after adding a logo or changing anything here."""
+
+import math
+from pathlib import Path
+
+from PIL import Image, ImageChops, ImageColor, ImageDraw, ImageFont
+
+SIZE = 512
+RADIUS = 56
+LOGO_AREA = 0.74  # share of the tile the logo may fill
+BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+HERE = Path(__file__).resolve().parent
+LOGOS = HERE / "logos"
+OUT = HERE / "media"
+
+# file name: (label, gradient top and bottom, logo in logos/, how to draw the logo)
+#   "fill"       the logo already is a square tile
+#   "fill 0.68"  the same, cropped to its central 68% (cuts a round logo's corners off),
+#                with a margin around it in the color at the crop's corner
+#   "color"      the logo as it is, centered on the background
+#   "white"      the logo turned white, for one-color logos on a colored background
+# Without its logo file, a tile shows its label instead.
+TILES = {
+    "raspberrypi": ("Raspberry Pi", ("#ffffff", "#e6e6eb"), "raspberrypi.jpg", "color"),
+    "steam": ("Steam", ("#2a475e", "#171d25"), "steam.webp", "color"),
+    "youtube": ("YouTube", ("#ffffff", "#e6e6eb"), "youtube.png", "color"),
+    "netflix": ("NETFLIX", ("#e50914", "#8c0610"), "netflix.png", "fill"),
+    "paramount": ("Paramount+", ("#0064ff", "#002a8c"), "paramount.png", "white"),
+    "hbomax": ("HBO Max", ("#5b2be0", "#1a0b5c"), "hbomax.jpg", "white"),
+    "disney": ("Disney+", ("#1f4bd6", "#0b1640"), "disney.webp", "white"),
+    "globoplay": ("globoplay", ("#ff6a1a", "#d6004f"), "globoplay.jpg", "fill"),
+    "primevideo": ("prime video", ("#1a98ff", "#0f171e"), "primevideo.jpg", "fill 0.68"),
+}
+POWER_COLORS = ("#3a3a40", "#1e1e22")
+
+
+def rounded_mask():
+    mask = Image.new("L", (SIZE, SIZE), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, SIZE - 1, SIZE - 1), RADIUS, fill=255)
+    return mask
+
+
+def background(top, bottom):
+    top, bottom = ImageColor.getrgb(top), ImageColor.getrgb(bottom)
+    gradient = Image.new("RGB", (1, SIZE))
+    for y in range(SIZE):
+        t = y / (SIZE - 1)
+        gradient.putpixel((0, y), tuple(round(a + (b - a) * t) for a, b in zip(top, bottom)))
+    tile = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    tile.paste(gradient.resize((SIZE, SIZE)), (0, 0), rounded_mask())
+    return tile
+
+
+def load_logo(path):
+    """The logo with a transparent background, cropped to its content."""
+    logo = Image.open(path).convert("RGBA")
+    if logo.getchannel("A").getextrema()[0] == 255:
+        # No transparency: treat white as the background, with soft edges
+        rgb = logo.convert("RGB")
+        r, g, b = ImageChops.difference(rgb, Image.new("RGB", rgb.size, "white")).split()
+        distance = ImageChops.lighter(ImageChops.lighter(r, g), b)
+        logo.putalpha(distance.point(lambda v: 0 if v < 24 else min(255, (v - 24) * 2)))
+    return logo.crop(logo.getchannel("A").getbbox())
+
+
+def logo_tile(colors, path, style):
+    kind, *crop = style.split()
+    if kind == "fill":
+        image = Image.open(path).convert("RGB")
+        if crop:
+            half = min(image.size) * float(crop[0]) / 2
+            cx, cy = image.width / 2, image.height / 2
+            image = image.crop((round(cx - half), round(cy - half), round(cx + half), round(cy + half)))
+            inset = round(SIZE * 0.86)
+            padded = Image.new("RGB", (SIZE, SIZE), image.getpixel((0, 0)))
+            padded.paste(image.resize((inset, inset), Image.LANCZOS), ((SIZE - inset) // 2,) * 2)
+            image = padded
+        tile = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+        tile.paste(image.resize((SIZE, SIZE), Image.LANCZOS), (0, 0), rounded_mask())
+        return tile
+    tile = background(*colors)
+    logo = load_logo(path)
+    if kind == "white":
+        white = Image.new("RGBA", logo.size, "white")
+        white.putalpha(logo.getchannel("A"))
+        logo = white
+    scale = min(SIZE * LOGO_AREA / logo.width, SIZE * LOGO_AREA / logo.height)
+    logo = logo.resize((round(logo.width * scale), round(logo.height * scale)), Image.LANCZOS)
+    tile.alpha_composite(logo, ((SIZE - logo.width) // 2, (SIZE - logo.height) // 2))
+    return tile
+
+
+def label(tile, text, center_y, max_size):
+    """Draw text centered at center_y, shrinking it until it fits the tile."""
+    draw = ImageDraw.Draw(tile)
+    size = max_size
+    while True:
+        font = ImageFont.truetype(BOLD, size)
+        left, _top, right, _bottom = draw.textbbox((0, 0), text, font=font)
+        if right - left <= SIZE * 0.8 or size <= 12:
+            break
+        size -= 2
+    draw.text((SIZE / 2, center_y), text, font=font, fill="white", anchor="mm")
+
+
+def power_symbol(draw, cx, cy, r, width):
+    # Pillow angles start at 3 o'clock and run clockwise; leave a gap at the top
+    draw.arc((cx - r, cy - r, cx + r, cy + r), start=-55, end=235, fill="white", width=width)
+    draw.line((cx, cy - r * 1.15, cx, cy - r * 0.1), fill="white", width=width)
+
+
+def restart_symbol(draw, cx, cy, r, width):
+    end = 235
+    draw.arc((cx - r, cy - r, cx + r, cy + r), start=-50, end=end, fill="white", width=width)
+    # Arrowhead at the end of the arc, pointing clockwise. Pillow draws a wide arc
+    # inward from its bounding circle, so center it on the line's middle.
+    theta = math.radians(end)
+    mid = r - width / 2
+    px, py = cx + mid * math.cos(theta), cy + mid * math.sin(theta)
+    tx, ty = -math.sin(theta), math.cos(theta)  # clockwise tangent
+    nx, ny = math.cos(theta), math.sin(theta)   # outward normal
+    length, half = width * 2.4, width * 1.7
+    draw.polygon([(px + tx * length, py + ty * length),
+                  (px + nx * half, py + ny * half),
+                  (px - nx * half, py - ny * half)], fill="white")
+
+
+def main():
+    OUT.mkdir(exist_ok=True)
+    for name, (text, colors, logo, style) in TILES.items():
+        if (LOGOS / logo).exists():
+            tile = logo_tile(colors, LOGOS / logo, style)
+        else:
+            tile = background(*colors)
+            label(tile, text, SIZE / 2, 96)
+        tile.save(OUT / f"{name}.png")
+
+    for name, text, symbol in (("reboot", "Reiniciar", restart_symbol),
+                               ("shutdown", "Desligar", power_symbol)):
+        tile = background(*POWER_COLORS)
+        symbol(ImageDraw.Draw(tile), SIZE / 2, SIZE * 0.42, SIZE * 0.2, 26)
+        label(tile, text, SIZE * 0.8, 64)
+        tile.save(OUT / f"{name}.png")
+
+
+if __name__ == "__main__":
+    main()

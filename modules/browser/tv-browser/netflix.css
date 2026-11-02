@@ -1,0 +1,6 @@
+/* Netflix's preview card pops up when a title gets focus and plays a trailer with
+   subtitles; spatial navigation then hops between the subtitle lines and can't
+   leave. Without it, OK on a title opens its full details instead. */
+.previewModal--wrapper.mini-modal {
+  display: none !important;
+}

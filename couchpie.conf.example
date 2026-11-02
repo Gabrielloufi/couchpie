@@ -1,0 +1,19 @@
+# couchPie settings, read by scripts/bootstrap.sh. Copy to couchpie.conf (which git
+# ignores) and fill in your own values.
+
+# The gaming PC, by the name Moonlight shows for it after pairing
+PC_HOST=my-pc
+# Its address on the home network, for the shared folders (SMB)
+PC_ADDRESS=192.168.0.10
+
+# Windows shares to mount at /mnt/windows_share/<name>. The Windows side is set up
+# by modules/smb/windows-share.ps1; the account's password goes in /etc/cifs-creds.
+SMB_SHARES="qbit sharedFolder"
+SMB_USER=couchpie
+# The share Kodi opens when it starts
+KODI_SHARE=qbit
+
+# The HDMI port the TV is on. On a Pi 5, HDMI0 is the port next to the USB-C power
+# input (/dev/cec0, vc4-hdmi-0); the other one is HDMI1 (/dev/cec1, vc4-hdmi-1).
+CEC_DEVICE=/dev/cec1
+CEC_INPUT=vc4-hdmi-1

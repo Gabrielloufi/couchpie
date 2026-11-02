@@ -1,0 +1,238 @@
+#!/bin/bash
+# Kiosk mode: Pegasus fullscreen on top of the normal desktop, which stays one step away.
+#
+#   kiosk start     open Pegasus if it isn't running (desktop icon, Home binding)
+#   kiosk desktop   close Pegasus and stay on the desktop
+#   kiosk close-stream  quit the app streaming from the PC, and Moonlight (green button)
+#   kiosk boot      run by labwc autostart; opens Pegasus unless boot mode is off
+#   kiosk on|off    what the next boot shows: Pegasus (on) or the desktop (off)
+#   kiosk status    show boot mode and whether Pegasus is running
+#   kiosk run APP   used by the Pegasus tiles in ~/.config/kiosk/menu
+#
+# The TV remote's Home (red) and Close (green) buttons, and Ctrl+Alt+K, are
+# labwc key bindings in ~/.config/labwc/rc.xml.
+
+set -u
+
+STATE_DIR="$HOME/.config/kiosk"
+BOOT_TO_DESKTOP="$STATE_DIR/boot-to-desktop"
+LOG="$HOME/.cache/kiosk.log"
+PEGASUS=/usr/local/bin/pegasus-fe
+MOONLIGHT_HOST=@PC_HOST@
+BROWSER_HOME="https://www.google.com"
+# Kiosk browsers get their own profiles, so their flags don't affect Chromium on the desktop
+PROFILES="$HOME/.local/share/kiosk"
+BROWSER_EXTENSION="$STATE_DIR/tv-browser"
+# youtube.com/tv only shows its TV interface to browsers that say they're a TV
+TV_USER_AGENT="Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1"
+# The desktop is in English; what the kiosk opens should be in Portuguese
+PORTUGUESE=(env LANG=pt_BR.UTF-8 LANGUAGE=pt_BR:pt)
+
+# Lets `ssh pi kiosk start` reach the desktop session on the TV
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+export DISPLAY="${DISPLAY:-:0}"
+
+log() { mkdir -p "${LOG%/*}"; echo "$(date '+%F %T') $*" >> "$LOG"; }
+
+start_pegasus() {
+    if pgrep -x pegasus-fe > /dev/null; then
+        log "start: pegasus already running"
+        return 0
+    fi
+    if [ ! -x "$PEGASUS" ]; then
+        log "start: $PEGASUS not found"
+        echo "kiosk: $PEGASUS is not installed" >&2
+        return 1
+    fi
+    log "start: launching pegasus"
+    # Pegasus keeps its own log in ~/.config/pegasus-frontend/lastrun.log.
+    # SDL would otherwise swallow SIGTERM, so `kiosk desktop` couldn't close it.
+    QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland;xcb}" SDL_NO_SIGNAL_HANDLERS=1 \
+        setsid "$PEGASUS" > /dev/null 2>&1 < /dev/null &
+}
+
+stop_pegasus() {
+    pkill -x pegasus-fe || return 0
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        pgrep -x pegasus-fe > /dev/null || return 0
+        sleep 0.3
+    done
+    log "desktop: pegasus ignored SIGTERM, killing it"
+    pkill -KILL -x pegasus-fe
+}
+
+# Pegasus unloads its menu until the command a tile ran exits, so apps start
+# detached and the menu stays ready behind them. An app that's already open is
+# brought to the front instead, by a key bound in rc.xml.
+run_or_raise() {
+    local running=$1 raise_key=$2
+    shift 2
+    if pgrep -f -- "$running" > /dev/null; then
+        raise "$raise_key"
+    else
+        start_detached "$@"
+    fi
+}
+
+raise() {
+    log "run: already open, raising"
+    wtype -k "$1"
+}
+
+start_detached() {
+    setsid "$@" > /dev/null 2>&1 < /dev/null &
+}
+
+# Full-screen Chromium without browser controls. Each NAME is a separate window
+# with its own profile and login, and its own raise key. Chromium names the
+# window after the profile, "chromium (<profile path>)", which is what the raise
+# keys match.
+chromium_kiosk() {
+    local name=$1 raise_key=$2
+    shift 2
+    local profile="$PROFILES/$name"
+    local running="^/usr/lib/chromium/chromium .*--user-data-dir=$profile( |$)"
+    pgrep -f -- "$running" > /dev/null || set_browser_prefs "$profile"
+    run_or_raise "$running" "$raise_key" "${PORTUGUESE[@]}" \
+        chromium --user-data-dir="$profile" --kiosk --no-first-run "$@"
+}
+
+# An ordinary web page, with the remote navigation extension (modules/browser):
+# the arrows move a highlight between everything clickable, OK clicks, Back goes back
+web_page() {
+    local name=$1 raise_key=$2 url=$3
+    chromium_kiosk "$name" "$raise_key" --load-extension="$BROWSER_EXTENSION" "$url"
+}
+
+# Paramount+ refuses fresh browser profiles (HTTP 403 from its bot protection, even
+# for its sign-in page) but accepts the desktop's, where you're signed in. Its tile
+# uses Chromium's desktop profile, left as it is: no language or translation
+# changes. Chromium names that window just "chromium".
+desktop_page() {
+    local raise_key=$1 url=$2
+    if desktop_chromium_open; then
+        raise "$raise_key"
+    else
+        start_detached "${PORTUGUESE[@]}" chromium --kiosk --no-first-run \
+            --load-extension="$BROWSER_EXTENSION" "$url"
+    fi
+}
+
+desktop_chromium_open() {
+    local pid
+    for pid in $(pgrep -f "^/usr/lib/chromium/chromium"); do
+        tr '\0' ' ' < "/proc/$pid/cmdline" 2> /dev/null | grep -qE -- "--user-data-dir|--type=" || return 0
+    done
+    return 1
+}
+
+# Green button on Moonlight: quit the app on the PC rather than just disconnecting.
+# Sunshine then runs the app's undo commands, which close the game and Steam Big
+# Picture (modules/streaming), and the stream here ends with it.
+close_stream() {
+    log "close: quitting the app on $MOONLIGHT_HOST"
+    timeout 20 "${PORTUGUESE[@]}" moonlight-qt quit "$MOONLIGHT_HOST" > /dev/null 2>&1 || true
+    pkill -x moonlight-qt || true
+}
+
+# Ask sites for Portuguese, and don't offer to translate pages. Chromium on
+# Linux takes the site language from the profile, not from --lang. Only safe to
+# change while that profile's Chromium is closed.
+set_browser_prefs() {
+    python3 -I - "$1/Default/Preferences" << 'EOF'
+import json, os, sys
+path = sys.argv[1]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+try:
+    with open(path) as f:
+        prefs = json.load(f)
+except (OSError, ValueError):
+    prefs = {}
+prefs.setdefault("translate", {})["enabled"] = False
+intl = prefs.setdefault("intl", {})
+intl["accept_languages"] = intl["selected_languages"] = "pt-BR,pt,en-US,en"
+with open(path, "w") as f:
+    json.dump(prefs, f)
+EOF
+}
+
+# Reboot and shut down ask first, with Cancel selected, so a stray OK does nothing
+confirm_power() {
+    local action=$1 question=$2 button=$3
+    {
+        "$HOME/.local/bin/kiosk-confirm" "$question" "$button" &&
+            log "power: $action" && systemctl "$action"
+    } > /dev/null 2>&1 < /dev/null &
+}
+
+case "${1:-}" in
+    start)
+        start_pegasus
+        ;;
+    desktop)
+        log "desktop: closing pegasus"
+        stop_pegasus
+        ;;
+    close-stream)
+        close_stream
+        ;;
+    boot)
+        if [ -e "$BOOT_TO_DESKTOP" ]; then
+            log "boot: boot mode is off, staying on the desktop"
+        else
+            sleep 2  # let the panel and desktop come up first so Pegasus lands on top
+            start_pegasus
+        fi
+        ;;
+    on)
+        rm -f "$BOOT_TO_DESKTOP"
+        echo "Next boot: Pegasus"
+        ;;
+    off)
+        mkdir -p "$STATE_DIR"
+        touch "$BOOT_TO_DESKTOP"
+        echo "Next boot: desktop"
+        ;;
+    status)
+        if [ -e "$BOOT_TO_DESKTOP" ]; then echo "boot: desktop"; else echo "boot: pegasus"; fi
+        if pgrep -x pegasus-fe > /dev/null; then echo "pegasus: running"; else echo "pegasus: not running"; fi
+        ;;
+    run)
+        app="${2:-}"
+        log "run: $app"
+        case "$app" in
+            steam)
+                run_or_raise "^moonlight-qt" XF86Launch3 \
+                    "${PORTUGUESE[@]}" moonlight-qt stream "$MOONLIGHT_HOST" "Steam Big Picture" ;;
+            pc)
+                run_or_raise "^moonlight-qt" XF86Launch3 \
+                    "${PORTUGUESE[@]}" moonlight-qt stream "$MOONLIGHT_HOST" "Desktop" ;;
+            moonlight)
+                run_or_raise "^moonlight-qt" XF86Launch3 "${PORTUGUESE[@]}" moonlight-qt ;;
+            kodi)
+                run_or_raise "/kodi\.bin" XF86Launch2 kodi ;;
+            browser)   web_page browser XF86Launch1 "$BROWSER_HOME" ;;
+            netflix)   web_page netflix XF86Launch4 "https://www.netflix.com" ;;
+            paramount) desktop_page XF86Launch5 "https://www.paramountplus.com/home/" ;;
+            hbomax)    web_page hbomax XF86Launch6 "https://www.hbomax.com" ;;
+            disney)    web_page disney XF86Launch7 "https://www.disneyplus.com" ;;
+            globoplay) web_page globoplay XF86Launch9 "https://globoplay.globo.com" ;;
+            primevideo) web_page primevideo XF86LaunchA "https://www.primevideo.com" ;;
+            youtube)
+                # Its TV interface handles the remote itself, so no navigation extension
+                chromium_kiosk youtube XF86Launch8 --user-agent="$TV_USER_AGENT" \
+                    "https://www.youtube.com/tv" ;;
+            reboot)    confirm_power reboot "Reiniciar o Raspberry Pi?" "Reiniciar" ;;
+            shutdown)  confirm_power poweroff "Desligar o Raspberry Pi?" "Desligar" ;;
+            desktop)
+                exec "$0" desktop ;;
+            *)
+                log "run: unknown app '$app'"; exit 1 ;;
+        esac
+        ;;
+    *)
+        sed -n 's/^#   //p' "$0"
+        exit 1
+        ;;
+esac

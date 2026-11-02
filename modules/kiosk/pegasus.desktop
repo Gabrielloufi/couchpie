@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Pegasus
+Comment=Voltar ao menu do Pegasus
+Exec=@HOME@/.local/bin/kiosk start
+Icon=applications-games
+Terminal=false
+Categories=Game;

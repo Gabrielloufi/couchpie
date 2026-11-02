@@ -1,0 +1,7 @@
+# Your own settings
+couchpie.conf
+
+# Brand logos stay local (see modules/pegasus/menu/logos/README.md)
+modules/pegasus/menu/logos/*
+!modules/pegasus/menu/logos/README.md
+modules/pegasus/menu/media/

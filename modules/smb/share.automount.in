@@ -1,0 +1,8 @@
+[Unit]
+Description=Mount the Windows @SHARE@ share when it is first used
+
+[Automount]
+Where=/mnt/windows_share/@SHARE@
+
+[Install]
+WantedBy=multi-user.target

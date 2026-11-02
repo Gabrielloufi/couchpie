@@ -1,0 +1,10 @@
+<sources>
+    <video>
+        <default pathversion="1"></default>
+        <source>
+            <name>Downloads do PC</name>
+            <path pathversion="1">@KODI_FOLDER@</path>
+            <allowsharing>true</allowsharing>
+        </source>
+    </video>
+</sources>
