@@ -28,8 +28,34 @@ Stage 1, running on a Raspberry Pi 5.
 - Channel ▲/▼ on the remote scroll the page (Page Up / Page Down).
 - Green button on a Moonlight stream quits the app on the PC; with
   `modules/streaming/sunshine-setup.ps1`, that closes the game and Steam Big Picture.
-- `scripts/cdp.py` to look inside kiosk pages.
+- `scripts/cdp.py` to look inside kiosk pages; `scripts/qa-nav.py` to test the remote
+  in a page press by press.
+- Remote navigation in the kiosk browsers: pressing twice in a direction that won't
+  move leaves the menu, panel or row the highlight is stuck in; OK on a menu the
+  highlight opened goes into it; Back in a tab a link opened closes it.
 - Roadmap: Wake-on-LAN for the PC and PiPA are the next topics.
+- Wake-on-LAN for the PC: "Ligar PC" tile and `wake-pc`; `PC_MAC` in `couchpie.conf`.
+- Wake page on the tailnet (`tailscale serve`): the phone or the PC wakes the PC and
+  turns the TV on or off.
+- `cec-remote tv on|standby`, and `kiosk wake` / `kiosk standby`.
+- Home Assistant in Docker (`modules/homeassistant`): Docker from Docker's repository,
+  history written less often, backups copied to the PC every hour, HTTPS on the tailnet
+  at port 8443.
+- Piper (text to speech, `pt_BR-faber-medium`) next to Home Assistant, on 127.0.0.1:10200.
+- `modules/voice`: the voice assistant's PC side, each started at boot before login and
+  reachable only from the Pi: Whisper `large-v3-turbo` (port 10300), F5-TTS pt-br with
+  the cloned "dora" voice and its own Wyoming server (port 10200), llama-server in
+  router mode (port 8080).
+- `rebuild-yourself.md`: the whole system, step by step, from a fresh Raspberry Pi OS.
+- `pipa/RESULTS.md`: how the voice services were chosen and measured.
+
+### Changed
+
+- Red and green swapped on the remote: green is now Home (the menu, leaving apps
+  open) and red closes the app in front (on a game stream, the game and Steam Big
+  Picture).
+- "Desligar" is now "Modo espera": it turns the TV off and leaves the Pi on, since a
+  Pi 5 can't be woken over the network and the phone reaches the PC through it.
 
 ### Fixed
 
@@ -38,3 +64,14 @@ Stage 1, running on a Raspberry Pi 5.
   spatial navigation couldn't).
 - Paramount+: opens with the desktop's Chromium profile, the only one its bot
   protection lets through.
+- Kiosk browsers, remote navigation:
+  - Rows: the arrows go poster by poster and turn the row at its end, instead of
+    stopping on the row's arrow buttons or page dots or jumping to another row.
+  - Up and down go row by row down the whole page (Disney+ stopped at the first
+    screen), and reach the header from the top of the page.
+  - Profile menus (Netflix, Disney+, Globoplay, Prime Video, Paramount+) can be
+    opened, browsed and closed with Back; Back puts the highlight back on the button
+    or poster it came from.
+  - HBO Max: the arrows work on the home page (its silent trailer was taken for a
+    video being watched). Globoplay: posters are reachable and open with OK.
+  - Google: the search box no longer catches the arrows until OK is pressed on it.

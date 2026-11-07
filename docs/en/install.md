@@ -1,5 +1,8 @@
 # Installing couchPie on a Raspberry Pi
 
+This is the TV box on its own. For the whole system in order (Tailscale, the PC's side,
+Home Assistant, the voice assistant), follow [rebuild-yourself.md](../../rebuild-yourself.md).
+
 ## You need
 
 - Raspberry Pi 5 with Raspberry Pi OS Bookworm, 64-bit, **with desktop**
@@ -40,9 +43,9 @@ The first run builds Pegasus, which takes 10 to 15 minutes. The script:
 It ends with a list of anything left for you to do. Run it again any time, for
 example after `git pull`; it only replaces couchPie's own files.
 
-## 3. Steam games and the green button
+## 3. Steam games and the red button
 
-So that the green button on a stream closes the game and Steam Big Picture, not
+So that the red button on a stream closes the game and Steam Big Picture, not
 only the stream, on the Windows PC in PowerShell as administrator:
 
 ```powershell
@@ -91,5 +94,5 @@ kiosk status
 remote-keyboard press home   # act as if a remote button was pressed
 ```
 
-On the Pi, the red button, Ctrl+Alt+K or the Pegasus icon on the desktop bring the
+On the Pi, the green button, Ctrl+Alt+K or the Pegasus icon on the desktop bring the
 menu back.

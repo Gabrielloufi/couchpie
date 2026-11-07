@@ -33,7 +33,10 @@ Pegasus tile ─> kiosk run <id> ─> app started detached, or brought to the fr
 | Kiosk browsers | [kiosk](../../modules/kiosk/), [browser](../../modules/browser/) | One full-screen Chromium per web tile, with remote-friendly navigation. |
 | Kodi | [kodi](../../modules/kodi/) | Media files from the PC; opens straight into them. |
 | SMB mounts | [smb](../../modules/smb/) | The PC's shared folders, mounted on demand. |
-| Moonlight + Sunshine | (packages), [streaming](../../modules/streaming/) | Streams Steam Big Picture or the PC's desktop; the green button quits the app on the PC. |
+| Moonlight + Sunshine | (packages), [streaming](../../modules/streaming/) | Streams Steam Big Picture or the PC's desktop; the red button quits the app on the PC. |
+| Home Assistant | [homeassistant](../../modules/homeassistant/) | Home automation, in Docker beside the rest; backups copied to the PC. |
+| Whisper, F5-TTS, llama-server | [voice](../../modules/voice/) | On the PC's GPU: speech to text, text to speech and the LLM for Home Assistant's voice assistant. |
+| `wake-pc`, wake page | [wake](../../modules/wake/) | Wakes the PC over the network; the page lets the phone and the PC wake the PC and turn the TV on or off over Tailscale. The Pi stays on to do it. |
 
 ## Decisions worth knowing
 
@@ -55,7 +58,7 @@ Pegasus tile ─> kiosk run <id> ─> app started detached, or brought to the fr
   moves a highlight with the arrows and clicks with OK. YouTube's own TV interface
   (`youtube.com/tv`, only served to a TV user agent) is built for remotes and needs
   nothing extra.
-- **Green on a stream quits the app on the PC.** Closing Moonlight only disconnects,
+- **Red on a stream quits the app on the PC.** Closing Moonlight only disconnects,
   leaving the game and Big Picture running; `moonlight-qt quit` makes Sunshine end
   the app and run its undo commands, which close both.
 - **The remote goes through one service.** `cec-remote` grabs the kernel's CEC input

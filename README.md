@@ -2,101 +2,87 @@
 
 **Smart TV killer. Portable media hub. Pi-powered freedom machine.**
 
-couchPie turns your Raspberry Pi 4/5 into a fully-customizable entertainment center that:
+couchPie turns a Raspberry Pi 5 behind your TV into the TV's brain: a home screen driven by
+the TV's own remote, streaming services, your PC's games and media files, and Home Assistant.
+A Windows PC on the same network does the heavy lifting: game streaming, file sharing, and
+the GPU work of a local voice assistant. Nothing needs a cloud service except the streaming
+sites themselves.
 
-* Boots straight into a TV-style home screen ([Pegasus](https://pegasus-frontend.org) with its own theme), in Brazilian Portuguese
-* Streams games from your PC using [Sunshine](https://github.com/LizardByte/Sunshine) and [Moonlight](https://moonlight-stream.org/)
-* Plays media files from your PC over the network via SMB, in [Kodi](https://kodi.tv)
-* Opens Netflix, Prime Video, HBO Max, Disney+, Paramount+, Globoplay and YouTube full screen, using Chromium in kiosk mode
-* Works with your TV remote over CEC, including an on-screen keyboard
-* Runs fully offline OR remotely with [Tailscale](https://tailscale.com/) for secure remote access
-* Integrates with Alexa using the Manual Smart Home Skill and Home Assistant (Stage 3)
-* Can be taken anywhere, broadcast its own Wi-Fi, and act like a portable smart TV system
+The TV interface is in Brazilian Portuguese.
 
----
+## How it fits together
 
-## 🚀 Project Stages
+```
+ TV remote ─HDMI-CEC─┐
+                     TV ═HDMI═ Raspberry Pi 5 ══ home network ══ Windows PC (NVIDIA GPU)
+                               ├ Pegasus home screen, tiles      ├ Sunshine (games)
+                               ├ Chromium kiosk browsers         ├ shared folders (SMB)
+                               ├ Kodi, Moonlight                 ├ Wake-on-LAN
+                               ├ wake page                       └ voice: Whisper, F5-TTS,
+                               └ Home Assistant + Piper (Docker)        llama-server
+                                         ║
+                                     Tailscale ══ your phone, anywhere
+                                                  (wake page, Home Assistant app)
+```
 
-### Next up
+The Pi stays on (a Pi 5 can't be woken over the network), so it's always there to wake the
+PC, run Home Assistant, and answer the phone. More detail:
+[docs/en/architecture.md](docs/en/architecture.md).
 
-The topics we're tackling next:
+## Modules
 
-* [ ] **Wake-on-LAN for the PC:** the Pi wakes the gaming PC with a "Ligar PC" tile
-  in Pegasus (and later a Home Assistant button). Away from home, ask the Pi over
-  Tailscale, since the magic packet doesn't cross it.
-* [ ] **PiPA (Pi Personal Assistant):** a personal assistant running on the Pi.
+Each folder in [modules/](modules/) is one part, with its own README. `scripts/bootstrap.sh`
+installs everything on the Pi; the PC's parts are PowerShell scripts in the same folders.
 
-### Stage 1 – Entertainment Hub (MVP)
+**The TV box** (on the Pi)
 
-* [x] Raspberry Pi OS (Bookworm)
-* [x] Moonlight tiles: Steam Big Picture and the PC's desktop
-* [x] Chromium in kiosk mode with DRM support, one window and login per service
-* [x] Pegasus home screen with a tile for each service, and a Streaming folder
-* [x] SMB mount to play PC-stored media; Kodi opens straight into it
-* [x] TV CEC remote support: Home and Close buttons, on-screen keyboard
-* [x] Installer: `scripts/bootstrap.sh`
+| Module | What it does |
+|---|---|
+| [kiosk](modules/kiosk/) | Opens the home screen at boot and runs what each tile asks for: apps start in the background, and a tile whose app is already open brings it to the front. Standby (TV off) and the PC wake tile. |
+| [pegasus](modules/pegasus/) | The home screen: the "Kiosk TV" theme for [Pegasus](https://pegasus-frontend.org), made for a TV remote, with folders and the menu's tiles. |
+| [remote](modules/remote/) | The TV's remote over HDMI-CEC: buttons become key presses, and an on-screen keyboard you drive with it. Also turns the TV on and off. |
+| [browser](modules/browser/) | A Chromium extension for the streaming sites: the remote's arrows move a highlight between everything clickable, OK clicks, Back goes back. One full-screen browser and login per service. |
+| [kodi](modules/kodi/) | [Kodi](https://kodi.tv) opens straight into the PC's shared downloads. |
 
-### Stage 2 – Remote Access Anywhere
+**With the PC**
 
-* [x] The Pi on Tailscale, for SSH from anywhere
-* [ ] Moonlight and the PC's folders over Tailscale when away from home
-* [ ] Travel Router mode (AP + WAN passthrough)
-* [ ] Hotel Wi-Fi protection with captive portal bypass
+| Module | Runs on | What it does |
+|---|---|---|
+| [streaming](modules/streaming/) | PC | [Sunshine](https://github.com/LizardByte/Sunshine) setup so that closing a [Moonlight](https://moonlight-stream.org/) stream with the remote also closes the game and Steam Big Picture. |
+| [smb](modules/smb/) | PC + Pi | Shares the PC's folders and mounts them on the Pi on demand, so a PC that's off never holds anything up. |
+| [wake](modules/wake/) | Pi | Wakes the PC with Wake-on-LAN from a home-screen tile, or from a page on your tailnet that your phone opens anywhere; the page also turns the TV on and off. |
 
-### Stage 3 – Smart Home + SSD + Emulation
+**Home automation and voice**
 
-* [ ] NVMe SSD storage
-* [ ] EmulationStation for retro gaming (PS1, N64, GBA, etc.)
-* [ ] Bluetooth gamepads (e.g. 8bitDo)
-* [ ] Alexa integration via Home Assistant
-* [ ] IR control of devices using Broadlink RM4 Mini
+| Module | Runs on | What it does |
+|---|---|---|
+| [homeassistant](modules/homeassistant/) | Pi | [Home Assistant](https://www.home-assistant.io/) in Docker, next to the TV box, with Piper (local text to speech). Backups are written on the Pi and copied to the PC every hour. HTTPS on the tailnet. |
+| [voice](modules/voice/) | PC | The voice assistant's GPU work, each started at boot before anyone logs in, reachable only from the Pi: Whisper (speech to text), F5-TTS (a cloned female voice), llama-server (the LLM). |
+| [pipa](pipa/) | Pi + PC | *In progress.* PiPA, the Pi Personal Assistant: one voice listener that routes each request to Home Assistant or to a personal agent. [RESULTS.md](pipa/RESULTS.md) has how the voice services were chosen and measured. |
 
----
-
-## 📊 Features
-
-* Boot to a TV home screen, with the full desktop one tile away (and `kiosk off` to boot to the desktop)
-* Kiosk mode for Chromium: the remote's arrows move a highlight to anything clickable, OK clicks
-* Tiles: Netflix, Prime Video, HBO Max, Disney+, Paramount+, Globoplay, YouTube, Steam, the PC's desktop, Kodi with the PC's files, a browser, restart and shut down
-* Low-cost upgrade path: no Smart TV required
-* Planned: modular environment detection (`home`, `safe travel`, `travel`) with dynamic configs; a Spotify tile
-
-The TV remote:
+## The TV remote
 
 | Button | Does |
 |---|---|
 | Arrows, OK, Back | Navigate, open, go back |
-| 🔴 Red | Home: back to the menu, leaving apps open |
-| 🟢 Green | Close the app in front; on a game stream, quit the game and Steam Big Picture |
+| 🟢 Green | Home: back to the menu, leaving apps open |
+| 🔴 Red | Close the app in front; on a game stream, quit the game and Steam Big Picture |
 | 🔵 Blue | On-screen keyboard |
 | Channel ▲ / ▼ | Scroll the page |
+| Numbers | Digits |
 
-How it fits together: [docs/en/architecture.md](docs/en/architecture.md).
+The home screen's tiles: Netflix, Prime Video, HBO Max, Disney+, Paramount+, Globoplay,
+YouTube (TV interface), Steam Big Picture and the PC's desktop over Moonlight, Kodi, a
+browser, Ligar PC (wake the PC), the Raspberry Pi's desktop, Reiniciar, and Modo espera
+(TV off).
 
----
+## Get started
 
-## 🚿 Hardware Requirements
+**[rebuild-yourself.md](rebuild-yourself.md)** walks through the whole system in order,
+from a freshly installed Raspberry Pi OS: Tailscale, the PC's side, the installer, Home
+Assistant and the voice assistant, with a check after each step.
 
-**Minimum:**
-
-* Raspberry Pi 5 (4GB is OK, 8GB recommended)
-* Official Pi 27W USB-C PSU
-* HDMI cable, to a TV with HDMI-CEC (tested on a Samsung TV)
-* MicroSD card (32–64GB recommended)
-* Optional: Bluetooth keyboard/mouse combo (e.g. Logitech K400+)
-
-**Recommended Add-ons:**
-
-* NVMe SSD (M.2 HAT for Pi)
-* Bluetooth controller
-* Broadlink RM4 Mini for IR control
-* Echo Dot for Alexa
-
----
-
-## 🚄 Getting Started
-
-On a Raspberry Pi 5 with Raspberry Pi OS Bookworm (desktop):
+Just the TV box, on a Raspberry Pi 5 with Raspberry Pi OS Bookworm (64-bit, desktop):
 
 ```bash
 git clone https://github.com/Gabrielloufi/couchpie.git
@@ -106,14 +92,63 @@ scripts/bootstrap.sh
 sudo reboot
 ```
 
-The full guide, including Moonlight and the PC's shared folders, is
-[docs/en/install.md](docs/en/install.md); when something doesn't work, see
-[docs/en/troubleshooting.md](docs/en/troubleshooting.md).
+| Doc | What |
+|---|---|
+| [rebuild-yourself.md](rebuild-yourself.md) | The whole system, step by step |
+| [docs/en/install.md](docs/en/install.md) | The TV box alone, and everyday commands |
+| [docs/en/architecture.md](docs/en/architecture.md) | How the pieces talk to each other |
+| [docs/en/troubleshooting.md](docs/en/troubleshooting.md) | When something doesn't work |
+| [CHANGELOG.md](CHANGELOG.md) | What changed |
 
-Coming later: an image builder, to patch the configs into a Raspberry Pi OS image
-and burn it to an SD card ready to boot.
+## Hardware
 
----
+* Raspberry Pi 5 (8 GB recommended) with the official 27 W USB-C power supply
+* microSD card, 64–128 GB, A2/U3
+* A TV with HDMI-CEC (tested on a Samsung TV), and an HDMI cable
+* Ethernet for the Pi, recommended
+* Optional: a Windows PC with an NVIDIA GPU (12 GB for the whole voice stack); a Bluetooth
+  keyboard; a BroadLink RM4 Pro for IR and RF devices; a 7" HDMI touch screen
+
+## 🚀 Roadmap
+
+### Stage 1 – Entertainment hub ✅
+
+* [x] Pegasus home screen with a tile per service and a Streaming folder
+* [x] Chromium in kiosk mode with DRM, one window and login per service, navigable with the remote
+* [x] Moonlight tiles: Steam Big Picture and the PC's desktop
+* [x] The PC's folders over SMB; Kodi opens straight into them
+* [x] TV remote over HDMI-CEC, with an on-screen keyboard
+* [x] Installer: `scripts/bootstrap.sh`
+
+### Stage 2 – Remote access and wake-up
+
+* [x] The Pi on Tailscale
+* [x] Wake-on-LAN for the PC, from the remote or from the phone anywhere; standby turns the TV off
+* [x] The PC on Tailscale before anyone logs in (unattended mode)
+* [ ] Moonlight and the PC's folders over Tailscale when away from home
+* [ ] Travel router mode (access point + hotel Wi-Fi), with captive portal handling
+
+### Stage 3 – Smart home and voice
+
+* [x] Home Assistant in Docker, backups copied to the PC
+* [x] Local voice services: Whisper, F5-TTS (female pt-BR voice), llama-server, Piper
+* [ ] PiPA: one voice listener routing to Home Assistant or a personal agent ([nanobot](https://github.com/HKUDS/nanobot)), also on Telegram
+* [ ] Devices: BroadLink IR/RF (fans, air conditioner via SmartIR), Midea air conditioner
+* [ ] A 7" touch screen dashboard next to the TV
+* [ ] A voice satellite on the Pi (USB mic and speaker)
+* [ ] Alexa through Home Assistant
+
+### Later
+
+* [ ] Bluetooth gamepads (8BitDo) and EmulationStation for retro games
+* [ ] Home Assistant on a machine of its own
+* [ ] An image builder: a ready-to-boot SD card
+
+## 🌐 Language
+
+The TV interface is in Brazilian Portuguese: the home screen, Pegasus's menus, the on-screen
+keyboard, the websites the tiles open, and the voice. The documentation is in English; a
+Brazilian Portuguese version (`README.pt-br.md`) is welcome.
 
 ## 📚 License
 
@@ -133,42 +168,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-Note: This project does not redistribute Raspberry Pi OS images.
-
----
-
-## 🌐 Internationalization
-
-The TV interface is in Brazilian Portuguese: the home screen, Pegasus's menus, the
-on-screen keyboard, and the websites the tiles open.
-
-The documentation will support:
-
-* [ ] English (`README.md`)
-* [ ] Brazilian Portuguese (`README.pt-br.md`)
-
-Contributions for other languages are welcome!
-
----
-
-## 🚀 Goals
-
-* Fully offline-capable media system
-* Fully remote-capable smart system
-* Home Assistant hub for Alexa
-* Full control with CEC / Bluetooth / phone / TV remote
-
----
-
-## ✨ Why couchPie?
-
-Because it lets you:
-
-* Replace a Smart TV
-* Travel with your entire home media stack
-* Stream games from your PC to any screen
-* Run everything from a single portable Pi
-
-This project is in active development. Raspberry Pi 5 makes it possible.
-
-> Stage 1 runs on a real Pi today. Stay tuned for the image builder and Stage 2!
+Note: This project does not redistribute Raspberry Pi OS images. Models used by the voice
+services have their own licenses (F5-TTS's pt-br checkpoint is non-commercial); see
+[modules/voice](modules/voice/).

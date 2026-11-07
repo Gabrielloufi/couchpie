@@ -1,7 +1,9 @@
 # Modules
 
-Each folder is one part of couchPie. `scripts/bootstrap.sh` installs all of them,
-filling in the `@PLACEHOLDERS@` from `couchpie.conf`.
+Each folder is one part of couchPie. `scripts/bootstrap.sh` installs the Pi's side of all
+of them, filling in the `@PLACEHOLDERS@` from `couchpie.conf`; the Windows PC's side (smb,
+streaming, voice) is set up with the PowerShell scripts in those folders. The whole
+procedure, in order, is [rebuild-yourself.md](../rebuild-yourself.md).
 
 | Module | What it does | Installed to |
 |---|---|---|
@@ -12,5 +14,8 @@ filling in the `@PLACEHOLDERS@` from `couchpie.conf`.
 | [kodi](kodi/) | Kodi opens straight into the PC's downloads folder. | `~/.kodi/` |
 | [streaming](streaming/) | Ending a Moonlight stream closes the game and Steam Big Picture on the PC. | `C:\ProgramData\couchpie\` on the PC |
 | [smb](smb/) | The PC's shared folders, mounted on demand; and the Windows side. | `/etc/systemd/system/`, `/etc/cifs-creds` |
+| [homeassistant](homeassistant/) | Home Assistant in Docker; backups copied to the PC. | `/srv/homeassistant/`, `/etc/docker/`, `/etc/systemd/system/` |
+| [wake](wake/) | Wakes the PC (Wake-on-LAN), and turns the TV on or off, from the remote or from a page on the tailnet. | `~/.local/bin/`, `~/.config/systemd/user/` |
+| [voice](voice/) | The voice assistant's GPU work on the PC: Whisper (hearing), F5-TTS (speaking), llama-server (thinking). Not installed by the bootstrap. | `D:\local-ai\` and `C:\local-ai\` on the PC |
 
 How they fit together is in [docs/en/architecture.md](../docs/en/architecture.md).
