@@ -238,8 +238,8 @@ FocusScope {
             anchors { bottom: parent.bottom; bottomMargin: vpx(16); left: parent.left }
             textFormat: Text.StyledText
             text: "<b>OK</b> abrir   ·   <b>Voltar</b> " + (root.folder ? "sair da pasta" : "menu")
-                + "      <font color='#e8473b'>●</font> início"
-                + "   <font color='#3ccf5a'>●</font> fechar app"
+                + "      <font color='#3ccf5a'>●</font> início"
+                + "   <font color='#e8473b'>●</font> fechar app"
                 + "   <font color='#3b82e8'>●</font> teclado"
             color: "#8a8a92"
             font { family: global.fonts.sans; pixelSize: vpx(15) }

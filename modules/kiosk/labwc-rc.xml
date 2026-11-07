@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
   <keyboard>
-    <!-- Kiosk Home (red remote button): bring Pegasus to the front, starting it if needed -->
+    <!-- Kiosk Home (green remote button): bring Pegasus to the front, starting it if needed -->
     <keybind key="XF86HomePage">
       <action name="ForEach">
         <query identifier="*pegasus*"/>
@@ -16,7 +16,7 @@
         <none><action name="Execute" command="@HOME@/.local/bin/kiosk start"/></none>
       </action>
     </keybind>
-    <!-- Kiosk Close (green remote button): close the focused app, never Pegasus, then Home.
+    <!-- Kiosk Close (red remote button): close the focused app, never Pegasus, then Home.
          A Moonlight stream is ended by quitting the app on the PC, which a close request doesn't do. -->
     <keybind key="XF86Close">
       <action name="If">

@@ -8,9 +8,9 @@ on the Windows PC, [Moonlight](https://moonlight-stream.org/) on the Pi.
 | `close-steam-game.ps1` | `C:\ProgramData\couchpie\` on the PC | Closes the Steam game that's running. |
 | `sunshine-setup.ps1` | run once on the PC, as administrator | Adds it to Sunshine's "Steam Big Picture" app. |
 
-## The green button while streaming
+## The red button while streaming
 
-On the Pi, the green button on a Moonlight window runs `kiosk close-stream`, which
+On the Pi, the red button on a Moonlight window runs `kiosk close-stream`, which
 asks the PC to **quit** the app (`moonlight-qt quit <pc>`) rather than just
 disconnecting, then closes Moonlight. Quitting makes Sunshine run the app's undo
 commands, in reverse order:

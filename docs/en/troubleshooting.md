@@ -48,10 +48,13 @@ profile path, and ignores `--class` on Wayland.
 
 **The arrows skip something on a site, or get stuck.** The
 [browser](../../modules/browser/) extension only reaches things with a pointer
-cursor, at least 14 pixels across and not covered by something else; a site fix
-goes in the extension, like Netflix's preview card (a trailer with subtitles, which
-the highlight kept hopping between). Back gets out of pop-ups; the mouse always
-works.
+cursor, at least 14 pixels across and not covered by something else. Pressing twice
+in a direction that won't move leaves the menu, panel or row the highlight is in,
+and Back closes menus and dialogs; the mouse always works. A site fix goes in the
+extension, like Netflix's preview card (a trailer with subtitles, which the
+highlight kept hopping between) or Globoplay's posters (their link only appears
+under the mouse). To see what happens press by press, see "Testing the remote in a
+page" below.
 
 **A site shows a blank page.** Look at what the page loads (see below). Paramount+
 answered `403` to its sign-up module (`/static/signup/…`, `/api/tn/signup/…`) and
@@ -60,7 +63,7 @@ user agent; its sign-in page was a plain `Error 403 Forbidden`. The desktop's
 Chromium profile, already signed in, was let through, so its tile uses that profile
 (see [modules/kiosk](../../modules/kiosk/)).
 
-**The green button only disconnects a stream.** Run
+**The red button only disconnects a stream.** Run
 `modules/streaming/sunshine-setup.ps1` on the PC (see
 [modules/streaming](../../modules/streaming/)). To check what it would close while a
 game runs: `C:\ProgramData\couchpie\close-steam-game.ps1 -DryRun`.
@@ -69,7 +72,28 @@ game runs: `C:\ProgramData\couchpie\close-steam-game.ps1 -DryRun`.
 `--remote-debugging-port=9222` added (it only listens on the Pi itself), then use
 `scripts/cdp.py` (needs `python3-websocket`): `cdp.py eval '<javascript>'` runs
 JavaScript in the page, and `cdp.py errors` reloads it and prints the errors and
-failed requests.
+failed requests. `cdp.py eval --extension '...'` runs it in the remote navigation
+extension's world, where `tvNav` gives its view of the page:
+`tvNav.reachable()` (what the arrows can go to), `tvNav.current()`,
+`tvNav.topModal()`, `tvNav.watching()`.
+
+For example, the Netflix tile with the port open (close the tile first):
+
+```sh
+WAYLAND_DISPLAY=wayland-0 DISPLAY=:0 chromium --user-data-dir="$HOME/.local/share/kiosk/netflix" --kiosk \
+  --load-extension="$HOME/.config/kiosk/tv-browser" --remote-debugging-port=9222 \
+  https://www.netflix.com/browse &
+```
+
+Paramount+ uses the desktop's profile: leave out `--user-data-dir`.
+
+**Testing the remote in a page.** With a browser open like that,
+`scripts/qa-nav.py down down right right ok back` presses the buttons the way the
+TV remote does (through `cec-remote`) and prints, after each press, what the
+highlight is on, the page, the scroll position and any open menus. `--shots DIR`
+also saves a screenshot after each press, and `--wait SECONDS` changes the pause
+between presses (0.9 by default; a row takes about a second to turn).
+`pageup`/`pagedown` stand for the channel buttons.
 
 **A streaming service won't play video.** Check that `libwidevinecdm0` is installed.
 Some services may need the browser to identify itself as a Chromebook; add a

@@ -1,0 +1,6 @@
+/* Globoplay's posters open a preview card under the mouse, and only that card holds the
+   link to the title. Mark the poster itself as clickable so the remote finds it
+   (globoplay.js makes the click follow the link). */
+.item-with-preview > .poster {
+  cursor: pointer;
+}

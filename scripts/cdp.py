@@ -3,6 +3,8 @@
 Needs python3-websocket.
 
   cdp.py eval 'document.title'   run JavaScript in the page and print the result
+  cdp.py eval --extension '...'  the same, in the remote navigation extension's world,
+                                 where tvNav (nav.js's diagnosis hooks) is defined
   cdp.py errors [SECONDS]        reload the page and print JavaScript errors, console
                                  errors and failed requests (default: 25 seconds)
 
@@ -23,12 +25,28 @@ def connect():
     return websocket.create_connection(page["webSocketDebuggerUrl"], timeout=2, suppress_origin=True)
 
 
-def evaluate(expression):
+def extension_context(ws):
+    """The execution context of the remote navigation extension in the main frame."""
+    ws.send(json.dumps({"id": 100, "method": "Runtime.enable"}))
+    end = time.time() + 2
+    while time.time() < end:
+        try:
+            msg = json.loads(ws.recv())
+        except websocket.WebSocketTimeoutException:
+            continue
+        context = msg.get("params", {}).get("context", {})
+        if msg.get("method") == "Runtime.executionContextCreated" and context.get("name") == "TV remote browsing":
+            return context["id"]
+    sys.exit("the remote navigation extension isn't loaded in this page")
+
+
+def evaluate(expression, in_extension=False):
     ws = connect()
-    # Wrapped in a function so repeated calls can declare the same names
-    ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {
-        "expression": f"(() => {{ return ({expression}); }})()",
-        "returnByValue": True, "awaitPromise": True}}))
+    params = {"expression": f"(() => {{ return ({expression}); }})()",  # repeated calls can reuse names
+              "returnByValue": True, "awaitPromise": True}
+    if in_extension:
+        params["contextId"] = extension_context(ws)
+    ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": params}))
     while True:
         try:
             reply = json.loads(ws.recv())
@@ -72,7 +90,9 @@ def errors(seconds):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 3 and sys.argv[1] == "eval":
+    if len(sys.argv) >= 4 and sys.argv[1:3] == ["eval", "--extension"]:
+        evaluate(sys.argv[3], in_extension=True)
+    elif len(sys.argv) >= 3 and sys.argv[1] == "eval":
         evaluate(sys.argv[2])
     elif len(sys.argv) >= 2 and sys.argv[1] == "errors":
         errors(int(sys.argv[2]) if len(sys.argv) > 2 else 25)

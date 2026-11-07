@@ -1,19 +1,43 @@
 {
   "manifest_version": 3,
   "name": "TV remote browsing",
-  "version": "1.2",
-  "description": "For the kiosk browser: arrows move a highlight between everything clickable, OK clicks, Back (Esc) goes back a page, and site fixes for remote navigation.",
+  "version": "2.1",
+  "description": "For the kiosk browser: arrows move a highlight between everything clickable and turn rows, OK clicks, Back closes menus or goes back, Page Up/Down scroll, and site fixes for remote navigation.",
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["tv.js", "nav.js"],
-      "all_frames": true,
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "nav.js"
+      ],
       "run_at": "document_start"
     },
     {
-      "matches": ["https://www.netflix.com/*"],
-      "js": ["netflix.js"],
-      "css": ["netflix.css"],
+      "matches": [
+        "https://www.netflix.com/*"
+      ],
+      "js": [
+        "netflix.js"
+      ],
+      "css": [
+        "netflix.css"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://globoplay.globo.com/*"
+      ],
+      "js": [
+        "globoplay.js"
+      ],
+      "css": [
+        "globoplay.css"
+      ],
       "run_at": "document_start"
     }
   ]
