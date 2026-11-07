@@ -1,0 +1,49 @@
+# The Streaming folder: the `x-folder: Streaming` tile on the home screen opens it.
+# Its own file, because Pegasus adds every game in a file to all the collections
+# defined above it. Same format as ../metadata.pegasus.txt.
+
+collection: Streaming
+sort-by: 2
+
+
+game: Netflix
+file: kiosk:netflix
+sort-by: 01
+launch: @HOME@/.local/bin/kiosk run netflix
+description: Netflix em tela cheia. Entre na sua conta uma vez e ela fica salva. O botão vermelho fecha.
+assets.boxFront: ../media/netflix.png
+
+game: Paramount+
+file: kiosk:paramount
+sort-by: 02
+launch: @HOME@/.local/bin/kiosk run paramount
+description: Paramount+ em tela cheia. Entre na sua conta uma vez e ela fica salva. O botão vermelho fecha.
+assets.boxFront: ../media/paramount.png
+
+game: HBO Max
+file: kiosk:hbomax
+sort-by: 03
+launch: @HOME@/.local/bin/kiosk run hbomax
+description: HBO Max em tela cheia. Entre na sua conta uma vez e ela fica salva. O botão vermelho fecha.
+assets.boxFront: ../media/hbomax.png
+
+game: Disney+
+file: kiosk:disney
+sort-by: 04
+launch: @HOME@/.local/bin/kiosk run disney
+description: Disney+ em tela cheia. Entre na sua conta uma vez e ela fica salva. O botão vermelho fecha.
+assets.boxFront: ../media/disney.png
+
+game: Globoplay
+file: kiosk:globoplay
+sort-by: 05
+launch: @HOME@/.local/bin/kiosk run globoplay
+description: Globoplay em tela cheia. Entre na sua conta uma vez e ela fica salva. O botão vermelho fecha.
+assets.boxFront: ../media/globoplay.png
+
+game: Prime Video
+file: kiosk:primevideo
+sort-by: 06
+launch: @HOME@/.local/bin/kiosk run primevideo
+description: Prime Video em tela cheia. Entre na sua conta uma vez e ela fica salva. O botão vermelho fecha.
+assets.boxFront: ../media/primevideo.png

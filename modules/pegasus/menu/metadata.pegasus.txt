@@ -1,0 +1,92 @@
+# Pegasus menu for kiosk mode. Each tile runs `kiosk run <id>` (~/.local/bin/kiosk).
+# To add a tile: copy a block, pick a new kiosk:<id>, and add that <id> to the
+# `run` case in the script. Pegasus ignores entries without a `file:` line.
+#
+# The first collection is the home screen (theme: ~/.config/pegasus-frontend/themes/kiosk-tv).
+# A tile with `x-folder: <collection>` opens that collection as a folder; without
+# its own picture it shows the folder's first four tiles. A folder's collection
+# goes in its own file (streaming/metadata.pegasus.txt, listed in
+# ~/.config/pegasus-frontend/game_dirs.txt), because Pegasus adds every game in a
+# file to all the collections defined above it.
+# Tiles are ordered by sort-by, compared as text, so keep two digits.
+# Images in media/ come from ./make-tiles.
+
+collection: Início
+sort-by: 1
+
+
+game: Área de Trabalho
+file: kiosk:desktop
+sort-by: 01
+launch: @HOME@/.local/bin/kiosk run desktop
+description: Fecha este menu e abre o Raspberry Pi OS. O botão verde do controle, Ctrl+Alt+K ou o ícone do Pegasus na área de trabalho trazem o menu de volta.
+assets.boxFront: media/raspberrypi.png
+
+game: Streaming
+file: kiosk:streaming
+sort-by: 02
+x-folder: Streaming
+description: Netflix, Paramount+, HBO Max, Disney+, Globoplay e Prime Video.
+
+game: YouTube
+file: kiosk:youtube
+sort-by: 03
+launch: @HOME@/.local/bin/kiosk run youtube
+description: YouTube com a interface de TV, feita para o controle remoto. Para entrar na sua conta, siga as instruções na tela.
+assets.boxFront: media/youtube.png
+
+game: Ligar PC
+file: kiosk:wakepc
+sort-by: 04
+launch: @HOME@/.local/bin/kiosk run wakepc
+description: Liga o @PC_HOST@ pela rede (Wake-on-LAN). Ele leva uns 30 segundos para ficar pronto; depois abra o Steam ou a Área de Trabalho do PC.
+assets.boxFront: media/wakepc.png
+
+game: Steam Big Picture
+file: kiosk:steam
+sort-by: 05
+launch: @HOME@/.local/bin/kiosk run steam
+description: Transmite o Steam Big Picture do @PC_HOST@ pelo Moonlight.
+assets.boxFront: media/steam.png
+
+game: Área de Trabalho do PC
+file: kiosk:pc
+sort-by: 06
+launch: @HOME@/.local/bin/kiosk run pc
+description: Transmite a área de trabalho do Windows do @PC_HOST@ pelo Moonlight.
+assets.boxFront: /usr/share/icons/gnome/256x256/devices/computer.png
+
+game: Moonlight
+file: kiosk:moonlight
+sort-by: 07
+launch: @HOME@/.local/bin/kiosk run moonlight
+description: Abre o app Moonlight para escolher um computador ou app.
+assets.boxFront: /usr/share/icons/hicolor/scalable/apps/moonlight.svg
+
+game: Kodi
+file: kiosk:kodi
+sort-by: 08
+launch: @HOME@/.local/bin/kiosk run kodi
+description: Central de mídia.
+assets.boxFront: /usr/share/icons/hicolor/256x256/apps/kodi.png
+
+game: Navegador
+file: kiosk:browser
+sort-by: 09
+launch: @HOME@/.local/bin/kiosk run browser
+description: Chromium em tela cheia. As setas pulam entre links, OK abre, Voltar volta para a página anterior, azul abre o teclado e vermelho fecha.
+assets.boxFront: /usr/share/icons/hicolor/256x256/apps/chromium.png
+
+game: Reiniciar
+file: kiosk:reboot
+sort-by: 10
+launch: @HOME@/.local/bin/kiosk run reboot
+description: Reinicia o Raspberry Pi. Pede confirmação antes.
+assets.boxFront: media/reboot.png
+
+game: Modo espera
+file: kiosk:standby
+sort-by: 11
+launch: @HOME@/.local/bin/kiosk run standby
+description: Desliga a TV. O Raspberry Pi continua ligado, para o celular e o PC alcançarem a casa pelo Tailscale. Ligue a TV pelo controle, ou pela página do couchPie no celular.
+assets.boxFront: media/standby.png

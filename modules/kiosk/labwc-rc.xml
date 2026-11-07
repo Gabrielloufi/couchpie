@@ -1,0 +1,99 @@
+<?xml version="1.0"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <keyboard>
+    <!-- Kiosk Home (green remote button): bring Pegasus to the front, starting it if needed -->
+    <keybind key="XF86HomePage">
+      <action name="ForEach">
+        <query identifier="*pegasus*"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+        <none><action name="Execute" command="@HOME@/.local/bin/kiosk start"/></none>
+      </action>
+    </keybind>
+    <keybind key="C-A-k">
+      <action name="ForEach">
+        <query identifier="*pegasus*"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+        <none><action name="Execute" command="@HOME@/.local/bin/kiosk start"/></none>
+      </action>
+    </keybind>
+    <!-- Kiosk Close (red remote button): close the focused app, never Pegasus, then Home.
+         A Moonlight stream is ended by quitting the app on the PC, which a close request doesn't do. -->
+    <keybind key="XF86Close">
+      <action name="If">
+        <query identifier="*moonlight*"/>
+        <then><action name="Execute" command="@HOME@/.local/bin/kiosk close-stream"/></then>
+      </action>
+      <action name="If">
+        <query identifier="*pegasus*"/>
+        <query identifier="*moonlight*"/>
+        <else><action name="Close"/></else>
+      </action>
+      <action name="ForEach">
+        <query identifier="*pegasus*"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+        <none><action name="Execute" command="@HOME@/.local/bin/kiosk start"/></none>
+      </action>
+    </keybind>
+    <!-- Used by `kiosk run` to bring an app that's already open to the front -->
+    <keybind key="XF86Launch1">
+      <action name="ForEach">
+        <query identifier="chromium (*/kiosk/browser)"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
+    <keybind key="XF86Launch2">
+      <action name="ForEach">
+        <query identifier="*kodi*"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
+    <keybind key="XF86Launch3">
+      <action name="ForEach">
+        <query identifier="*moonlight*"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
+    <keybind key="XF86Launch4">
+      <action name="ForEach">
+        <query identifier="chromium (*/kiosk/netflix)"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
+    <keybind key="XF86Launch5">
+      <action name="ForEach">
+        <query identifier="chromium"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
+    <keybind key="XF86Launch6">
+      <action name="ForEach">
+        <query identifier="chromium (*/kiosk/hbomax)"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
+    <keybind key="XF86Launch7">
+      <action name="ForEach">
+        <query identifier="chromium (*/kiosk/disney)"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
+    <keybind key="XF86Launch8">
+      <action name="ForEach">
+        <query identifier="chromium (*/kiosk/youtube)"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
+    <keybind key="XF86Launch9">
+      <action name="ForEach">
+        <query identifier="chromium (*/kiosk/globoplay)"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
+    <keybind key="XF86LaunchA">
+      <action name="ForEach">
+        <query identifier="chromium (*/kiosk/primevideo)"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
+  </keyboard>
+</openbox_config>

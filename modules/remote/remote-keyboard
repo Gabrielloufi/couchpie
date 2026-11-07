@@ -1,0 +1,305 @@
+#!/usr/bin/python3 -I
+"""On-screen keyboard for the TV remote.
+
+Opens when a text field gets focus (squeekboard reports that over D-Bus, and is
+then hidden in favor of this one) or when the remote's keyboard button is
+pressed. Arrows move the highlight, OK types the key, Back closes. Remote
+buttons come from cec-remote over a Unix socket; mouse and touch work too.
+Text goes to the focused app through wtype, so this window never takes
+keyboard focus.
+
+  remote-keyboard               run the keyboard (started by labwc autostart)
+  remote-keyboard press BUTTON  act as if a remote button was pressed:
+                                up, down, left, right, ok, back, home, close or keyboard
+"""
+
+import json
+import os
+import socket
+import subprocess
+import sys
+
+os.environ.setdefault("NO_AT_BRIDGE", "1")  # no accessibility bus on this Pi; silences GTK's warning
+
+import gi  # noqa: E402
+
+gi.require_version("Gdk", "3.0")
+gi.require_version("Gtk", "3.0")
+gi.require_version("GtkLayerShell", "0.1")
+from gi.repository import Gdk, Gio, GLib, Gtk, GtkLayerShell  # noqa: E402
+
+SOCKET_PATH = "/run/cec-remote.sock"
+WIDTH = 1100  # px
+
+# A key is a character, or (label, action, width in key units). Each row adds up to 10 units.
+SHIFT = ("⇧", "shift", 1.5)
+BACKSPACE = ("⌫", "key:BackSpace", 1.5)
+SYMBOLS = ("?123", "page:sym", 1.5)
+LETTERS = ("ABC", "page:abc", 1.5)
+CLOSE = ("✕", "close", 1)
+SPACE = ("espaço", "text: ", 3.5)
+LEFT = ("←", "key:Left", 1)
+RIGHT = ("→", "key:Right", 1)
+ENTER = ("⏎", "enter", 1)
+PAGES = {
+    "abc": [
+        "1234567890",
+        "qwertyuiop",
+        "asdfghjklç",
+        [SHIFT, *"zxcvbnm", BACKSPACE],
+        [SYMBOLS, CLOSE, SPACE, ".", LEFT, RIGHT, ENTER],
+    ],
+    "sym": [
+        "!@#$%&*()-",
+        "_=+/,:;'\"?",
+        "áéíóúãõâêô",
+        [("www.", "text:www.", 1.5), *"àü~<>", (".com", "text:.com", 2), BACKSPACE],
+        [LETTERS, CLOSE, SPACE, ".", LEFT, RIGHT, ENTER],
+    ],
+}
+
+CSS = b"""
+.remote-keyboard { background-color: #141416; }
+.remote-keyboard .hint { color: #8a8a90; font-size: 15px; margin: 8px 0 2px; }
+.remote-keyboard button.key {
+    background: #2a2a2e; background-image: none; color: #f2f2f2;
+    border: 2px solid #2a2a2e; border-radius: 8px; box-shadow: none; text-shadow: none;
+    font-size: 24px; min-height: 50px; margin: 4px; padding: 0;
+}
+.remote-keyboard button.key:hover { background: #3a3a40; }
+.remote-keyboard button.key.special { background: #38383e; border-color: #38383e; font-size: 20px; }
+.remote-keyboard button.key.on { color: #ff6a5c; }
+.remote-keyboard button.key.selected { background: #e8473b; border-color: #ffffff; color: #ffffff; }
+"""
+
+
+def wtype(*args, text=None):
+    subprocess.run(["wtype", *args], input=text.encode() if text else None, timeout=3)
+
+
+class Key:
+    def __init__(self, spec, x):
+        if isinstance(spec, str):
+            spec = (spec, "text:" + spec, 1)
+        self.label, self.action, width = spec
+        self.x, self.span = x, int(width * 2)  # the grid has two columns per key unit
+
+
+class Keyboard(Gtk.Window):
+    def __init__(self):
+        super().__init__()
+        GtkLayerShell.init_for_window(self)
+        GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
+        GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
+        for edge in (GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT, GtkLayerShell.Edge.BOTTOM):
+            GtkLayerShell.set_anchor(self, edge, True)
+        GtkLayerShell.auto_exclusive_zone_enable(self)  # maximized windows shrink to stay visible
+        self.get_style_context().add_class("remote-keyboard")
+
+        hint = Gtk.Label(label="Setas movem  ·  OK digita  ·  Voltar fecha")
+        hint.get_style_context().add_class("hint")
+        self.grid = Gtk.Grid(column_homogeneous=True, row_homogeneous=True, halign=Gtk.Align.CENTER)
+        self.grid.set_size_request(WIDTH, -1)
+        self.grid.set_margin_bottom(10)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box.add(hint)
+        box.add(self.grid)
+        self.add(box)
+        box.show_all()
+
+        self.page, self.shift, self.selected = "abc", None, (1, 0)
+        self.build()
+        self.remote = Remote(self.on_remote, on_connect=self.report_state)
+        watch_squeekboard(self.open)
+
+    def build(self):
+        for child in self.grid.get_children():
+            child.destroy()
+        self.rows = []
+        for r, row_spec in enumerate(PAGES[self.page]):
+            row, x = [], 0
+            for spec in row_spec:
+                key = Key(spec, x)
+                key.button = Gtk.Button(label=self.label(key), can_focus=False)
+                style = key.button.get_style_context()
+                style.add_class("key")
+                if not key.action.startswith("text:") or len(key.label) > 1:
+                    style.add_class("special")
+                if key.action == "shift" and self.shift:
+                    style.add_class("on")
+                key.button.connect("clicked", lambda _b, k=key: self.activate(k))
+                self.grid.attach(key.button, x, r, key.span, 1)
+                row.append(key)
+                x += key.span
+            self.rows.append(row)
+        r, i = self.selected
+        self.select(r, min(i, len(self.rows[r]) - 1))
+        self.grid.show_all()
+
+    def label(self, key):
+        if key.action == "shift":
+            return "⇪" if self.shift == "lock" else "⇧"
+        if self.shift and key.action.startswith("text:") and len(key.label) == 1:
+            return key.label.upper()
+        return key.label
+
+    def select(self, r, i):
+        old_r, old_i = self.selected
+        if old_r < len(self.rows) and old_i < len(self.rows[old_r]):
+            self.rows[old_r][old_i].button.get_style_context().remove_class("selected")
+        self.selected = (r, i)
+        self.rows[r][i].button.get_style_context().add_class("selected")
+
+    def move(self, direction):
+        r, i = self.selected
+        if direction in ("left", "right"):
+            i = (i + (1 if direction == "right" else -1)) % len(self.rows[r])
+        else:
+            # Land on the key in the next row whose center is closest to this one's
+            key = self.rows[r][i]
+            center = key.x + key.span / 2
+            r = (r + (1 if direction == "down" else -1)) % len(self.rows)
+            i = min(range(len(self.rows[r])),
+                    key=lambda j: abs(self.rows[r][j].x + self.rows[r][j].span / 2 - center))
+        self.select(r, i)
+
+    def activate(self, key):
+        kind, _, value = key.action.partition(":")
+        if kind == "text":
+            wtype("-", text=value.upper() if self.shift and len(value) == 1 else value)
+            if self.shift == "once":
+                self.shift = None
+                self.build()
+        elif kind == "key":
+            wtype("-k", value)
+        elif kind == "shift":
+            self.shift = {None: "once", "once": "lock", "lock": None}[self.shift]
+            self.build()
+        elif kind == "page":
+            self.page, self.shift = value, None
+            self.build()
+        elif kind == "enter":
+            wtype("-k", "Return")
+            self.close()
+        elif kind == "close":
+            self.close()
+
+    def open(self):
+        if not self.get_visible():
+            self.page, self.shift, self.selected = "abc", None, (1, 0)
+            self.build()
+            self.show()
+            self.report_state()
+
+    def close(self):
+        self.hide()
+        self.report_state()
+
+    def report_state(self):
+        self.remote.send({"keyboard": self.get_visible()})
+
+    def on_remote(self, msg):
+        if msg.get("toggle"):
+            self.close() if self.get_visible() else self.open()
+        if msg.get("home") and self.get_visible():
+            self.close()
+        button = msg.get("key")
+        if not button or not self.get_visible():
+            return
+        if button == "ok":
+            r, i = self.selected
+            self.activate(self.rows[r][i])
+        elif button == "back":
+            self.close()
+        else:
+            self.move(button)
+
+
+class Remote:
+    """Connection to cec-remote; reconnects whenever the service restarts."""
+
+    def __init__(self, on_message, on_connect=None):
+        self.sock, self.buf = None, b""
+        self.on_message, self.on_connect = on_message, on_connect
+        GLib.idle_add(self.connect)
+
+    def connect(self):
+        try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.connect(SOCKET_PATH)
+        except OSError:
+            GLib.timeout_add_seconds(3, self.connect)
+            return False
+        self.sock = sock
+        GLib.io_add_watch(sock.fileno(), GLib.PRIORITY_DEFAULT,
+                          GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, self.on_readable)
+        if self.on_connect:
+            self.on_connect()
+        return False
+
+    def on_readable(self, _fd, condition):
+        data = b""
+        if condition & GLib.IO_IN:
+            try:
+                data = self.sock.recv(4096)
+            except OSError:
+                pass
+        if not data:
+            self.sock.close()
+            self.sock, self.buf = None, b""
+            GLib.timeout_add_seconds(3, self.connect)
+            return False
+        *lines, self.buf = (self.buf + data).split(b"\n")
+        for line in lines:
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            self.on_message(msg)
+        return True
+
+    def send(self, msg):
+        if self.sock:
+            try:
+                self.sock.sendall((json.dumps(msg) + "\n").encode())
+            except OSError:
+                pass
+
+
+def watch_squeekboard(on_text_focus):
+    """Call on_text_focus whenever squeekboard would pop up, and keep it hidden."""
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+
+    def changed(conn, _sender, _path, _iface, _signal, params):
+        _name, props, _invalidated = params.unpack()
+        if props.get("Visible"):
+            conn.call("sm.puri.OSK0", "/sm/puri/OSK0", "sm.puri.OSK0", "SetVisible",
+                      GLib.Variant("(b)", (False,)), None, Gio.DBusCallFlags.NONE, -1, None, None)
+            on_text_focus()
+
+    bus.signal_subscribe("sm.puri.OSK0", "org.freedesktop.DBus.Properties", "PropertiesChanged",
+                         "/sm/puri/OSK0", None, Gio.DBusSignalFlags.NONE, changed)
+
+
+def press(button):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.connect(SOCKET_PATH)
+        sock.sendall((json.dumps({"button": button}) + "\n").encode())
+
+
+def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "press":
+        press(sys.argv[2])
+        return
+    if len(sys.argv) > 1:
+        sys.exit(__doc__.split("\n\n")[-1])
+    css = Gtk.CssProvider()
+    css.load_from_data(CSS)
+    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css,
+                                             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    Keyboard()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

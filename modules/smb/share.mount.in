@@ -1,0 +1,13 @@
+# Started on demand by the matching .automount unit, so a PC that's off
+# doesn't hold up or fail the boot
+[Unit]
+Description=Mount Windows @SHARE@ share
+After=network-online.target
+Wants=network-online.target
+
+[Mount]
+What=//@PC_ADDRESS@/@SHARE@
+Where=/mnt/windows_share/@SHARE@
+Type=cifs
+Options=credentials=/etc/cifs-creds,vers=3.0,sec=ntlmssp,rw,noperm,nounix,uid=@UID@,gid=@GID@,file_mode=0666,dir_mode=0777,cache=none,actimeo=1
+TimeoutSec=15

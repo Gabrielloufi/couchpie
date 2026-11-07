@@ -1,0 +1,27 @@
+#!/bin/bash
+# Copies Home Assistant's backups to the PC's shared folder. Home Assistant always
+# writes them on the Pi first, so a PC that's off never costs a backup: this runs
+# every hour (ha-backup-sync.timer) and catches up whenever the PC is on.
+# Nothing is ever deleted on the PC; Home Assistant's own retention applies to the Pi.
+
+set -eu
+
+SOURCE=/srv/homeassistant/config/backups
+DEST="@HA_BACKUP_DIR@"
+PC_ADDRESS=@PC_ADDRESS@
+
+[ -d "$SOURCE" ] || exit 0
+# Ask the PC first: opening the share while the PC is off takes 15 s to fail
+if ! timeout 3 bash -c "</dev/tcp/$PC_ADDRESS/445" 2> /dev/null; then
+    echo "The PC is off; trying again later."
+    exit 0
+fi
+
+# Skip backups changed in the last 5 minutes: one may still be being written
+list=$(mktemp)
+trap 'rm -f "$list"' EXIT
+find "$SOURCE" -maxdepth 1 -name '*.tar' -mmin +5 -printf '%f\n' > "$list"
+[ -s "$list" ] || exit 0
+
+mkdir -p "$DEST"
+rsync -t --ignore-existing --files-from="$list" --out-format='copied %n' "$SOURCE/" "$DEST/"

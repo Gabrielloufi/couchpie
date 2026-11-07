@@ -1,0 +1,101 @@
+#!/usr/bin/python3 -I
+"""Asks a yes/no question over the whole screen, readable and answerable with the TV remote.
+
+  kiosk-confirm QUESTION BUTTON   exits 0 if BUTTON is chosen, 1 for Cancelar
+
+Left/Right switch between the buttons, OK (Enter) chooses, Back (Esc) cancels.
+Cancelar starts selected, so a stray OK does nothing.
+"""
+
+import os
+import sys
+
+os.environ.setdefault("NO_AT_BRIDGE", "1")  # no accessibility bus on this Pi; silences GTK's warning
+
+import gi  # noqa: E402
+
+gi.require_version("Gdk", "3.0")
+gi.require_version("Gtk", "3.0")
+gi.require_version("GtkLayerShell", "0.1")
+from gi.repository import Gdk, Gtk, GtkLayerShell  # noqa: E402
+
+CSS = b"""
+.confirm { background-color: rgba(8, 8, 10, 0.78); }
+.confirm .panel { background: #1c1c20; border-radius: 16px; padding: 40px 48px; }
+.confirm .question { color: #f2f2f2; font-size: 34px; font-weight: bold; margin-bottom: 32px; }
+.confirm button {
+    background: #2a2a2e; background-image: none; color: #f2f2f2;
+    border: 3px solid #2a2a2e; border-radius: 10px; box-shadow: none; text-shadow: none;
+    font-size: 26px; min-width: 220px; min-height: 64px; margin: 0 12px;
+}
+.confirm button.selected { background: #e8473b; border-color: #ffffff; color: #ffffff; }
+"""
+
+
+class Confirm(Gtk.Window):
+    def __init__(self, question, button):
+        super().__init__()
+        self.set_visual(self.get_screen().get_rgba_visual())  # lets the backdrop be see-through
+        GtkLayerShell.init_for_window(self)
+        GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
+        GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
+        for edge in (GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT,
+                     GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM):
+            GtkLayerShell.set_anchor(self, edge, True)
+        self.get_style_context().add_class("confirm")
+
+        text = Gtk.Label(label=question)
+        text.get_style_context().add_class("question")
+        row = Gtk.Box(halign=Gtk.Align.CENTER)
+        self.buttons = [Gtk.Button(label="Cancelar", can_focus=False),
+                        Gtk.Button(label=button, can_focus=False)]
+        for i, b in enumerate(self.buttons):
+            b.connect("clicked", lambda _b, i=i: self.finish(i == 1))
+            row.add(b)
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                        halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        panel.get_style_context().add_class("panel")
+        panel.add(text)
+        panel.add(row)
+        self.add(panel)
+
+        self.confirmed = False
+        self.selected = 0
+        self.select(0)
+        self.connect("key-press-event", self.on_key)
+        self.show_all()
+
+    def select(self, i):
+        self.buttons[self.selected].get_style_context().remove_class("selected")
+        self.selected = i
+        self.buttons[i].get_style_context().add_class("selected")
+
+    def on_key(self, _window, event):
+        key = Gdk.keyval_name(event.keyval)
+        if key in ("Left", "Right", "Up", "Down", "Tab"):
+            self.select(1 - self.selected)
+        elif key in ("Return", "KP_Enter", "space"):
+            self.finish(self.selected == 1)
+        elif key == "Escape":
+            self.finish(False)
+        return True
+
+    def finish(self, confirmed):
+        self.confirmed = confirmed
+        Gtk.main_quit()
+
+
+def main():
+    if len(sys.argv) != 3:
+        sys.exit(__doc__.split("\n\n")[1])
+    css = Gtk.CssProvider()
+    css.load_from_data(CSS)
+    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css,
+                                             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    dialog = Confirm(sys.argv[1], sys.argv[2])
+    Gtk.main()
+    sys.exit(0 if dialog.confirmed else 1)
+
+
+if __name__ == "__main__":
+    main()

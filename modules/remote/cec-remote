@@ -1,0 +1,413 @@
+#!/usr/bin/python3 -I
+"""TV remote over HDMI-CEC.
+
+Registers the Pi with the TV as a playback device, answers the TV's status
+queries, and turns remote buttons into key presses on a virtual keyboard:
+arrows stay arrows, OK becomes Enter and Samsung's vendor-specific Back
+becomes Esc. While the on-screen keyboard (remote-keyboard) is open, the
+buttons go to it over a Unix socket instead.
+
+Socket protocol, one JSON object per line:
+  client -> service  {"keyboard": true|false}   on-screen keyboard opened/closed
+                     {"button": "up"}           act as if a remote button was pressed
+                     {"tv": "on"|"standby"}     turn the TV on to our input, or off
+  service -> client  {"key": "up"}              remote button, while the keyboard is open
+                     {"toggle": true}           open/close the keyboard
+                     {"home": true}             home or close button; the keyboard closes
+
+  cec-remote                  run the service
+  cec-remote tv on|standby    ask the running service to turn the TV on or off
+"""
+
+import fcntl
+import grp
+import json
+import logging
+import os
+import select
+import socket
+import struct
+import subprocess
+import sys
+import time
+
+import evdev
+from evdev import ecodes as e
+
+CEC_DEVICE = "@CEC_DEVICE@"      # the HDMI port the TV is on (couchpie.conf)
+RC_INPUT_NAME = "@CEC_INPUT@"    # input device the kernel creates for that port's remote keys
+OSD_NAME = "Raspberry Pi"
+SOCKET_PATH = "/run/cec-remote.sock"
+SOCKET_GROUP = "input"
+
+# Remote keys, as the kernel reports them, that have a named button
+REMOTE_KEYS = {
+    e.KEY_UP: "up", e.KEY_DOWN: "down", e.KEY_LEFT: "left", e.KEY_RIGHT: "right",
+    e.KEY_OK: "ok", e.KEY_SELECT: "ok", e.KEY_ENTER: "ok",
+    e.KEY_EXIT: "back", e.KEY_BACK: "back",
+    e.KEY_GREEN: "home", e.KEY_RED: "close", e.KEY_BLUE: "keyboard",
+}
+# Remote keys that apps don't understand as they are: the number buttons arrive as
+# phone-keypad keys, which have no meaning on a desktop. The channel buttons scroll.
+KEY_REMAP = {getattr(e, f"KEY_NUMERIC_{n}"): getattr(e, f"KEY_{n}") for n in range(10)}
+KEY_REMAP.update({e.KEY_CHANNELUP: e.KEY_PAGEUP, e.KEY_CHANNELDOWN: e.KEY_PAGEDOWN})
+# Samsung sends some buttons as <Vendor Remote Button Down> instead of standard CEC codes
+SAMSUNG_BUTTONS = {0x91: "back"}
+# What a named button presses in apps while the on-screen keyboard is closed.
+# Home and Close are bound in labwc (~/.config/labwc/rc.xml) to show Pegasus.
+BUTTON_KEYS = {
+    "up": e.KEY_UP, "down": e.KEY_DOWN, "left": e.KEY_LEFT, "right": e.KEY_RIGHT,
+    "ok": e.KEY_ENTER, "back": e.KEY_ESC, "home": e.KEY_HOMEPAGE, "close": e.KEY_CLOSE,
+}
+
+log = logging.getLogger("cec-remote")
+
+
+def _ioc(direction, nr, size):
+    return (direction << 30) | (size << 16) | (ord("a") << 8) | nr
+
+
+# From linux/cec.h
+CEC_ADAP_G_PHYS_ADDR = _ioc(2, 1, 2)
+CEC_ADAP_G_LOG_ADDRS = _ioc(2, 3, 92)
+CEC_TRANSMIT = _ioc(3, 5, 56)
+CEC_RECEIVE = _ioc(3, 6, 56)
+CEC_DQEVENT = _ioc(3, 7, 80)
+CEC_S_MODE = _ioc(1, 9, 4)
+CEC_MODE_INITIATOR = 0x01
+CEC_MODE_FOLLOWER = 0x10
+CEC_MSG = struct.Struct("=QQIIII16s7Bx")  # struct cec_msg
+TV = 0x00
+BROADCAST = 0x0F
+UNCONFIGURED = 0xFF
+INVALID_PHYS_ADDR = 0xFFFF
+
+FEATURE_ABORT = 0x00
+IMAGE_VIEW_ON = 0x04
+GIVE_DECK_STATUS = 0x1A
+DECK_STATUS = 0x1B
+STANDBY = 0x36
+USER_CONTROL_PRESSED = 0x44
+USER_CONTROL_RELEASED = 0x45
+SET_OSD_NAME = 0x47
+ROUTING_CHANGE = 0x80
+ROUTING_INFORMATION = 0x81
+ACTIVE_SOURCE = 0x82
+REPORT_PHYSICAL_ADDR = 0x84
+REQUEST_ACTIVE_SOURCE = 0x85
+SET_STREAM_PATH = 0x86
+DEVICE_VENDOR_ID = 0x87
+VENDOR_REMOTE_BUTTON_DOWN = 0x8A
+VENDOR_REMOTE_BUTTON_UP = 0x8B
+MENU_REQUEST = 0x8D
+MENU_STATUS = 0x8E
+GIVE_DEVICE_POWER_STATUS = 0x8F
+REPORT_POWER_STATUS = 0x90
+INACTIVE_SOURCE = 0x9D
+CEC_VERSION = 0x9E
+# Directed messages that expect no answer; any other unhandled one gets Feature Abort
+NO_ANSWER_NEEDED = {
+    FEATURE_ABORT, DECK_STATUS, STANDBY, USER_CONTROL_PRESSED, USER_CONTROL_RELEASED,
+    SET_OSD_NAME, ROUTING_INFORMATION, REPORT_PHYSICAL_ADDR, DEVICE_VENDOR_ID,
+    VENDOR_REMOTE_BUTTON_UP, MENU_STATUS, REPORT_POWER_STATUS, INACTIVE_SOURCE, CEC_VERSION,
+}
+
+
+class Cec:
+    def __init__(self, path):
+        self.path = path
+        self.configure()
+        self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+        fcntl.ioctl(self.fd, CEC_S_MODE, struct.pack("=I", CEC_MODE_INITIATOR | CEC_MODE_FOLLOWER))
+        self.active = False  # whether the TV is showing our input
+        self.check_at = None  # when to make sure our registration is still in place
+
+    def configure(self):
+        # Claims a logical address; the kernel keeps it across TV power cycles
+        subprocess.run(["cec-ctl", "-d", self.path, "--playback", "--osd-name", OSD_NAME],
+                       check=True, stdout=subprocess.DEVNULL)
+        self.configured_at = time.monotonic()
+
+    def phys_addr(self):
+        buf = bytearray(2)
+        fcntl.ioctl(self.fd, CEC_ADAP_G_PHYS_ADDR, buf)
+        return struct.unpack("=H", buf)[0]
+
+    def log_addrs(self):
+        """Our first logical address, and the OSD name the adapter is configured with."""
+        buf = bytearray(92)
+        fcntl.ioctl(self.fd, CEC_ADAP_G_LOG_ADDRS, buf)
+        num_log_addrs, osd_name = buf[7], bytes(buf[16:31]).split(b"\0")[0].decode(errors="replace")
+        return buf[0], (osd_name if num_log_addrs else None)
+
+    def log_addr(self):
+        return self.log_addrs()[0]
+
+    def state_changed(self):
+        """The adapter's addresses changed: TV power, or another program reconfiguring it.
+        Check once things have settled."""
+        self.drain_events()
+        self.check_at = time.monotonic() + 2
+
+    def restore_if_changed(self):
+        """Put our registration back if another program (e.g. Kodi's libcec) replaced it."""
+        self.check_at = None
+        _la, osd_name = self.log_addrs()
+        if osd_name == OSD_NAME:
+            return
+        retry_in = self.configured_at + 10 - time.monotonic()
+        if retry_in > 0:  # don't fight another program in a tight loop
+            self.check_at = time.monotonic() + retry_in
+            return
+        log.info("CEC registration changed to %r by another program, restoring", osd_name)
+        self.configure()
+        self.announce()
+
+    def transmit(self, dest, opcode, *args):
+        la = self.log_addr()
+        if la == UNCONFIGURED:  # e.g. the TV is off
+            return
+        data = bytes([(la << 4) | dest, opcode, *args])
+        msg = bytearray(CEC_MSG.pack(0, 0, len(data), 0, 0, 0, data, 0, 0, 0, 0, 0, 0, 0))
+        try:
+            fcntl.ioctl(self.fd, CEC_TRANSMIT, msg)
+        except OSError as err:
+            log.warning("sending %s failed: %s", data.hex(" "), err)
+
+    def announce(self):
+        """Tell the TV we're the active source, so it forwards its remote to us."""
+        pa = self.phys_addr()
+        if pa != INVALID_PHYS_ADDR:
+            self.transmit(BROADCAST, ACTIVE_SOURCE, pa >> 8, pa & 0xFF)
+            self.active = True
+
+    def tv(self, power):
+        """Turn the TV on, showing our input, or put it in standby. Our logical
+        address survives the TV's standby, so it still hears us."""
+        if power == "on":
+            self.transmit(TV, IMAGE_VIEW_ON)
+            self.announce()
+        elif power == "standby":
+            self.transmit(TV, STANDBY)
+            self.active = False
+
+    def messages(self):
+        """Received messages waiting on the adapter, as bytes."""
+        while True:
+            buf = bytearray(CEC_MSG.size)
+            try:
+                fcntl.ioctl(self.fd, CEC_RECEIVE, buf)
+            except BlockingIOError:
+                return
+            _tx_ts, _rx_ts, length, _timeout, sequence, _flags, data, *_status = CEC_MSG.unpack(buf)
+            if sequence == 0:  # otherwise it's the result of one of our transmits
+                yield data[:length]
+
+    def drain_events(self):
+        while True:
+            try:
+                fcntl.ioctl(self.fd, CEC_DQEVENT, bytearray(80))
+            except BlockingIOError:
+                return
+
+    def handle(self, msg, keys):
+        if len(msg) < 2:
+            return  # poll
+        initiator, dest = msg[0] >> 4, msg[0] & 0x0F
+        opcode, args = msg[1], msg[2:]
+        if opcode == VENDOR_REMOTE_BUTTON_DOWN and args:
+            button = SAMSUNG_BUTTONS.get(args[0])
+            if button:
+                log.debug("Samsung button 0x%02x (%s)", args[0], button)
+                keys.button(button)
+            else:
+                log.info("unmapped Samsung button 0x%02x", args[0])
+        elif opcode == USER_CONTROL_PRESSED and args:
+            # The key itself arrives through the kernel's input device
+            log.debug("remote button 0x%02x", args[0])
+        elif opcode == GIVE_DEVICE_POWER_STATUS:
+            self.transmit(initiator, REPORT_POWER_STATUS, 0x00)  # on
+        elif opcode == GIVE_DECK_STATUS:
+            self.transmit(initiator, DECK_STATUS, 0x1A)  # stopped
+        elif opcode == MENU_REQUEST:
+            self.transmit(initiator, MENU_STATUS, 0x00)  # activated
+        elif opcode in (SET_STREAM_PATH, ROUTING_CHANGE):
+            new = args[0:2] if opcode == SET_STREAM_PATH else args[2:4]
+            if len(new) == 2 and (new[0] << 8 | new[1]) == self.phys_addr():
+                self.announce()
+            else:
+                self.active = False
+        elif opcode == ACTIVE_SOURCE:
+            self.active = False
+        elif opcode == REQUEST_ACTIVE_SOURCE:
+            if self.active:
+                self.announce()
+        elif dest != BROADCAST and opcode not in NO_ANSWER_NEEDED:
+            self.transmit(initiator, FEATURE_ABORT, opcode, 0x00)  # unrecognized opcode
+
+
+class Keys:
+    """Presses keys for remote buttons, or hands them to the on-screen keyboard."""
+
+    def __init__(self, remote, cec):
+        codes = (set(remote.capabilities().get(e.EV_KEY, []))
+                 | set(BUTTON_KEYS.values()) | set(KEY_REMAP.values()))
+        self.uinput = evdev.UInput({e.EV_KEY: sorted(codes)}, name="TV remote")
+        self.cec = cec
+        self.held = {}     # remote key -> key we pressed for it
+        self.clients = {}  # socket -> {"buf": bytes, "keyboard": bool}
+
+    def keyboard_open(self):
+        return any(c["keyboard"] for c in self.clients.values())
+
+    def remote_key(self, code, value):
+        """A key event from the kernel's CEC input device (1 press, 2 repeat, 0 release)."""
+        if value == 0:
+            pressed = self.held.pop(code, None)
+            if pressed is not None:
+                self.press(pressed, 0)
+            return
+        name = REMOTE_KEYS.get(code)
+        if name in ("home", "close", "keyboard"):
+            if value == 1:
+                self.button(name)
+        elif name and self.keyboard_open():
+            self.send({"key": name})
+        elif value == 1:
+            pressed = BUTTON_KEYS[name] if name else KEY_REMAP.get(code, code)
+            log.debug("pressing %s", e.KEY.get(pressed, pressed))
+            self.held[code] = pressed
+            self.press(pressed, 1)
+
+    def button(self, name):
+        """A complete press of a named button (Samsung vendor buttons, or a client)."""
+        if name == "keyboard":
+            self.send({"toggle": True})
+        elif name in ("home", "close"):
+            self.send({"home": True})
+            self.tap(BUTTON_KEYS[name])
+        elif self.keyboard_open():
+            self.send({"key": name})
+        elif name in BUTTON_KEYS:
+            self.tap(BUTTON_KEYS[name])
+
+    def tap(self, code):
+        self.press(code, 1)
+        self.press(code, 0)
+
+    def press(self, code, value):
+        self.uinput.write(e.EV_KEY, code, value)
+        self.uinput.syn()
+
+    def send(self, event):
+        line = (json.dumps(event) + "\n").encode()
+        for sock in self.clients:
+            try:
+                sock.sendall(line)
+            except OSError:
+                pass  # the main loop drops it when it hangs up
+
+    def accept(self, server):
+        sock, _ = server.accept()
+        sock.setblocking(False)
+        self.clients[sock] = {"buf": b"", "keyboard": False}
+        return sock
+
+    def read(self, sock):
+        """Handle data from a client. Returns False once it has disconnected."""
+        try:
+            data = sock.recv(4096)
+        except OSError:
+            data = b""
+        if not data:
+            del self.clients[sock]
+            sock.close()
+            return False
+        client = self.clients[sock]
+        *lines, client["buf"] = (client["buf"] + data).split(b"\n")
+        for line in lines:
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            if "keyboard" in msg:
+                client["keyboard"] = bool(msg["keyboard"])
+            if "button" in msg:
+                self.button(msg["button"])
+            if "tv" in msg:
+                log.info("TV %s, asked by a client", msg["tv"])
+                self.cec.tv(msg["tv"])
+        return True
+
+
+def listen(path):
+    if os.path.exists(path):
+        os.unlink(path)
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(path)
+    os.chown(path, 0, grp.getgrnam(SOCKET_GROUP).gr_gid)
+    os.chmod(path, 0o660)
+    server.listen()
+    return server
+
+
+def tv_command(power):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.connect(SOCKET_PATH)
+        sock.sendall((json.dumps({"tv": power}) + "\n").encode())
+
+
+def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "tv" and sys.argv[2] in ("on", "standby"):
+        tv_command(sys.argv[2])
+        return
+    if len(sys.argv) > 1:
+        sys.exit(__doc__.split("\n\n")[-1])
+    # CEC_REMOTE_DEBUG=1 logs every button, for finding out what a remote sends
+    debug = os.environ.get("CEC_REMOTE_DEBUG")
+    logging.basicConfig(level=logging.DEBUG if debug else logging.INFO, format="%(message)s")
+    devices = (evdev.InputDevice(path) for path in evdev.list_devices())
+    remote = next((d for d in devices if d.name == RC_INPUT_NAME), None)
+    if remote is None:
+        raise SystemExit(f"no input device named {RC_INPUT_NAME}")
+    remote.grab()  # its keys now reach apps only through us
+    cec = Cec(CEC_DEVICE)
+    keys = Keys(remote, cec)
+    server = listen(SOCKET_PATH)
+
+    poller = select.poll()
+    poller.register(cec.fd, select.POLLIN | select.POLLPRI)
+    poller.register(remote.fd, select.POLLIN)
+    poller.register(server, select.POLLIN)
+    clients = {}  # fd -> socket
+
+    cec.announce()
+    log.info("ready on %s, physical address %04x", CEC_DEVICE, cec.phys_addr())
+    while True:
+        timeout = None if cec.check_at is None else max(0, cec.check_at - time.monotonic()) * 1000
+        for fd, mask in poller.poll(timeout):
+            if fd == cec.fd:
+                if mask & select.POLLPRI:
+                    cec.state_changed()
+                for msg in cec.messages():
+                    cec.handle(msg, keys)
+            elif fd == remote.fd:
+                try:
+                    for event in remote.read():
+                        if event.type == e.EV_KEY:
+                            keys.remote_key(event.code, event.value)
+                except BlockingIOError:
+                    pass
+            elif fd == server.fileno():
+                sock = keys.accept(server)
+                clients[sock.fileno()] = sock
+                poller.register(sock, select.POLLIN)
+            elif fd in clients and not keys.read(clients[fd]):
+                poller.unregister(fd)
+                del clients[fd]
+        if cec.check_at is not None and time.monotonic() >= cec.check_at:
+            cec.restore_if_changed()
+
+
+if __name__ == "__main__":
+    main()

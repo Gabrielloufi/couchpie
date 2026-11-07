@@ -1,0 +1,15 @@
+# couchPie's Home Assistant settings. scripts/bootstrap.sh replaces this file on every
+# run, so put your own settings in configuration.yaml or another package.
+
+recorder:
+  # History lives on the Pi's microSD card: write it every 30 s instead of every 5 s,
+  # and keep a week of it instead of 10 days. Long-term statistics are kept anyway.
+  commit_interval: 30
+  purge_keep_days: 7
+
+http:
+  # `tailscale serve` passes HTTPS requests from the tailnet on from 127.0.0.1
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - ::1
