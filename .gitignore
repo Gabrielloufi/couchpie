@@ -5,3 +5,7 @@ couchpie.conf
 modules/pegasus/menu/logos/*
 !modules/pegasus/menu/logos/README.md
 modules/pegasus/menu/media/
+
+# Python environments and caches (pipa's venv, local tests)
+.venv/
+__pycache__/

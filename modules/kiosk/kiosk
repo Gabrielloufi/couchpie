@@ -3,13 +3,15 @@
 #
 #   kiosk start     open Pegasus if it isn't running (desktop icon, Home binding)
 #   kiosk desktop   close Pegasus and stay on the desktop
-#   kiosk close-stream  quit the app streaming from the PC, and Moonlight (green button)
+#   kiosk close-stream  quit the app streaming from the PC, and Moonlight (red button)
+#   kiosk standby   Modo espera: turn the TV off; the Pi stays on
+#   kiosk wake      turn the TV on, to the Pi's input
 #   kiosk boot      run by labwc autostart; opens Pegasus unless boot mode is off
 #   kiosk on|off    what the next boot shows: Pegasus (on) or the desktop (off)
 #   kiosk status    show boot mode and whether Pegasus is running
 #   kiosk run APP   used by the Pegasus tiles in ~/.config/kiosk/menu
 #
-# The TV remote's Home (red) and Close (green) buttons, and Ctrl+Alt+K, are
+# The TV remote's Home (green) and Close (red) buttons, and Ctrl+Alt+K, are
 # labwc key bindings in ~/.config/labwc/rc.xml.
 
 set -u
@@ -127,7 +129,7 @@ desktop_chromium_open() {
     return 1
 }
 
-# Green button on Moonlight: quit the app on the PC rather than just disconnecting.
+# Red button on Moonlight: quit the app on the PC rather than just disconnecting.
 # Sunshine then runs the app's undo commands, which close the game and Steam Big
 # Picture (modules/streaming), and the stream here ends with it.
 close_stream() {
@@ -157,7 +159,7 @@ with open(path, "w") as f:
 EOF
 }
 
-# Reboot and shut down ask first, with Cancel selected, so a stray OK does nothing
+# Reboot asks first, with Cancel selected, so a stray OK does nothing
 confirm_power() {
     local action=$1 question=$2 button=$3
     {
@@ -176,6 +178,16 @@ case "${1:-}" in
         ;;
     close-stream)
         close_stream
+        ;;
+    # The Pi stays on: it can't be woken over the network, and the phone reaches the
+    # PC through it. Standby is the TV, over HDMI-CEC (cec-remote).
+    standby)
+        log "standby: TV off"
+        cec-remote tv standby
+        ;;
+    wake)
+        log "wake: TV on"
+        cec-remote tv on
         ;;
     boot)
         if [ -e "$BOOT_TO_DESKTOP" ]; then
@@ -223,8 +235,10 @@ case "${1:-}" in
                 # Its TV interface handles the remote itself, so no navigation extension
                 chromium_kiosk youtube XF86Launch8 --user-agent="$TV_USER_AGENT" \
                     "https://www.youtube.com/tv" ;;
+            wakepc)    "$HOME/.local/bin/wake-pc" ;;
             reboot)    confirm_power reboot "Reiniciar o Raspberry Pi?" "Reiniciar" ;;
-            shutdown)  confirm_power poweroff "Desligar o Raspberry Pi?" "Desligar" ;;
+            standby)
+                exec "$0" standby ;;
             desktop)
                 exec "$0" desktop ;;
             *)

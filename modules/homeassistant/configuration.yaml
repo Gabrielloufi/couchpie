@@ -1,0 +1,17 @@
+# Home Assistant's default configuration, plus couchPie's package. scripts/bootstrap.sh
+# installs it only on a fresh install; after that it's yours to edit.
+
+# Loads default set of integrations. Do not remove.
+default_config:
+
+# couchPie's settings (history, proxy) are in packages/couchpie.yaml
+homeassistant:
+  packages: !include_dir_named packages
+
+# Load frontend themes from the themes folder
+frontend:
+  themes: !include_dir_merge_named themes
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml

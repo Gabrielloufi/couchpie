@@ -1,0 +1,54 @@
+#!/usr/bin/python3 -I
+"""Wakes the PC with Wake-on-LAN. The magic packet is a broadcast on the home
+network, so it has to come from here: it doesn't cross Tailscale.
+
+  wake-pc           send the magic packet
+  wake-pc --wait    send it, then wait until the PC answers (up to 2 minutes)
+  wake-pc status    print "on" or "off"
+"""
+
+import socket
+import subprocess
+import sys
+import time
+
+PC_MAC = "@PC_MAC@"
+PC_ADDRESS = "@PC_ADDRESS@"
+WAIT_SECONDS = 120
+
+
+def send():
+    packet = b"\xff" * 6 + bytes.fromhex(PC_MAC.replace(":", "").replace("-", "")) * 16
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        for _ in range(3):  # UDP, no reply: repeat in case one gets lost
+            sock.sendto(packet, ("255.255.255.255", 9))
+            time.sleep(0.1)
+
+
+def is_on():
+    """Whether the PC answers a ping (Windows allows it on the Private network)."""
+    ping = subprocess.run(["ping", "-c", "1", "-W", "1", PC_ADDRESS],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return ping.returncode == 0
+
+
+def main():
+    args = sys.argv[1:]
+    if args == ["status"]:
+        print("on" if is_on() else "off")
+    elif args in ([], ["--wait"]):
+        send()
+        if args:
+            deadline = time.monotonic() + WAIT_SECONDS
+            while not is_on():
+                if time.monotonic() > deadline:
+                    sys.exit(f"wake-pc: {PC_ADDRESS} didn't answer in {WAIT_SECONDS} s")
+                time.sleep(2)
+            print("on")
+    else:
+        sys.exit(__doc__.split("\n\n")[-1])
+
+
+if __name__ == "__main__":
+    main()

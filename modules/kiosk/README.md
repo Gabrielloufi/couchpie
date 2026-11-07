@@ -6,14 +6,16 @@ and the normal desktop is one tile away.
 | File | Installed to | Purpose |
 |---|---|---|
 | `kiosk` | `~/.local/bin/kiosk` | Starts and stops Pegasus, and runs what the menu tiles ask for (`kiosk run <tile>`). |
-| `kiosk-confirm` | `~/.local/bin/kiosk-confirm` | Full-screen yes/no question for Reiniciar/Desligar, answerable with the remote. Cancelar starts selected. |
+| `kiosk-confirm` | `~/.local/bin/kiosk-confirm` | Full-screen yes/no question for Reiniciar, answerable with the remote. Cancelar starts selected. |
 | `labwc-rc.xml` | merged into `~/.config/labwc/rc.xml` | Key bindings: Home, Close, Ctrl+Alt+K, and the keys `kiosk` uses to raise an open app. |
 | `pegasus.desktop` | `~/Desktop/`, `~/.local/share/applications/` | "Pegasus" icon to get back to the menu from the desktop. |
 
 ```
 kiosk start     open Pegasus if it isn't running
 kiosk desktop   close Pegasus and stay on the desktop
-kiosk close-stream  quit the app streaming from the PC, and Moonlight (green button)
+kiosk close-stream  quit the app streaming from the PC, and Moonlight (red button)
+kiosk standby   Modo espera: turn the TV off; the Pi stays on (see ../wake/)
+kiosk wake      turn the TV on, to the Pi's input
 kiosk boot      run by labwc's autostart; opens Pegasus unless boot mode is off
 kiosk on|off    what the next boot shows: Pegasus (on) or the desktop (off)
 kiosk status    boot mode, and whether Pegasus is running
@@ -48,9 +50,9 @@ extension, and leaves that profile's settings alone. That window is just
 `chromium`, and it's the same browser as on the desktop: closing one closes the
 other.
 
-## The green button
+## The red button
 
-`labwc-rc.xml` binds the green button (`XF86Close`) to close the app in front and
+`labwc-rc.xml` binds the red button (`XF86Close`) to close the app in front and
 show Pegasus. On a Moonlight window it runs `kiosk close-stream` instead: that asks
 the PC to quit the streamed app (`moonlight-qt quit <pc>`), which a close request
 doesn't do, then closes Moonlight. With the PC side set up (see

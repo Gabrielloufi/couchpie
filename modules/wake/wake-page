@@ -1,0 +1,166 @@
+#!/usr/bin/python3 -I
+"""Page for waking the PC and turning the TV on or off, from the phone or the PC.
+
+Listens on 127.0.0.1 only. `tailscale serve` publishes it to the tailnet at
+https://<pi>.<tailnet>.ts.net/, so only your own Tailscale devices can open it.
+
+  GET  /            the page
+  GET  /status      {"pc": true|false}
+  POST /pc/wake     wake the PC (wake-pc)
+  POST /tv/on       turn the TV on, to the Pi's input (kiosk wake)
+  POST /tv/standby  turn the TV off; the Pi stays on (kiosk standby)
+"""
+
+import json
+import subprocess
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+PORT = 8095
+BIN = "@HOME@/.local/bin"
+ACTIONS = {
+    "/pc/wake": [f"{BIN}/wake-pc"],
+    "/tv/on": [f"{BIN}/kiosk", "wake"],
+    "/tv/standby": [f"{BIN}/kiosk", "standby"],
+}
+
+PAGE = """<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1e1e22">
+<title>couchPie</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f2f2f5; --card: #fff; --text: #1e1e22;
+          --muted: #6b6b75; --on: #1f9d55; --off: #b0b0b8; --button: #2a475e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1e1e22; --card: #2b2b31; --text: #f2f2f5; --muted: #a0a0aa;
+            --off: #6b6b75; --button: #3d6a8c; }
+  }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+         font: 17px/1.4 system-ui, sans-serif; }
+  main { max-width: 420px; margin: 0 auto; display: grid; gap: 16px; }
+  section { background: var(--card); border-radius: 16px; padding: 16px; }
+  h2 { font-size: 18px; margin: 0; }
+  .state { color: var(--muted); margin: 4px 0 12px; }
+  .state.on::before, .state.off::before { content: "\\25CF\\00a0\\00a0"; }
+  .state.on::before { color: var(--on); }
+  .state.off::before { color: var(--off); }
+  button { display: block; width: 100%; padding: 14px; border: 0; border-radius: 12px;
+           background: var(--button); color: #fff; font: inherit; font-weight: 600; }
+  button + button { margin-top: 8px; }
+  button.secondary { background: transparent; color: var(--text);
+                     box-shadow: inset 0 0 0 1px var(--muted); }
+  button:disabled { opacity: .5; }
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <h2>PC</h2>
+    <p class="state" id="pc">&hellip;</p>
+    <button id="wake-pc">Ligar PC</button>
+  </section>
+  <section>
+    <h2>TV</h2>
+    <p class="state">O Raspberry Pi fica sempre ligado; estes bot&otilde;es ligam e desligam a TV.</p>
+    <button data-post="/tv/on">Ligar TV</button>
+    <button class="secondary" data-post="/tv/standby">Modo espera</button>
+  </section>
+</main>
+<script>
+const pc = document.getElementById("pc");
+let wakingUntil = 0;
+
+async function refresh() {
+  try {
+    const on = (await (await fetch("/status")).json()).pc;
+    if (on) wakingUntil = 0;
+    const waking = !on && Date.now() < wakingUntil;
+    pc.textContent = on ? "Ligado" : waking ? "Ligando\\u2026" : "Desligado";
+    pc.className = "state " + (on ? "on" : waking ? "" : "off");
+  } catch {
+    pc.textContent = "O Raspberry Pi n\\u00e3o respondeu";
+    pc.className = "state";
+  }
+}
+
+async function post(path, button) {
+  button.disabled = true;
+  try {
+    const response = await fetch(path, { method: "POST" });
+    if (!response.ok) throw new Error(await response.text());
+    return true;
+  } catch (err) {
+    alert("N\\u00e3o deu certo: " + err.message);
+    return false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.getElementById("wake-pc").onclick = async (event) => {
+  if (await post("/pc/wake", event.currentTarget)) {
+    wakingUntil = Date.now() + 120000;
+    refresh();
+  }
+};
+for (const button of document.querySelectorAll("[data-post]")) {
+  button.onclick = () => post(button.dataset.post, button);
+}
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 3000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>
+"""
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/":
+            self.reply(HTTPStatus.OK, PAGE, "text/html; charset=utf-8")
+        elif self.path == "/status":
+            status = subprocess.run([f"{BIN}/wake-pc", "status"], capture_output=True, text=True)
+            self.reply(HTTPStatus.OK, json.dumps({"pc": status.stdout.strip() == "on"}),
+                       "application/json")
+        else:
+            self.reply(HTTPStatus.NOT_FOUND, "not found\n")
+
+    def do_POST(self):
+        command = ACTIONS.get(self.path)
+        if command is None:
+            return self.reply(HTTPStatus.NOT_FOUND, "not found\n")
+        # Browsers say which site a request comes from: refuse other sites' pages, so
+        # a link elsewhere can't press these buttons. curl sends no such header.
+        if self.headers.get("Sec-Fetch-Site", "none") not in ("same-origin", "none"):
+            return self.reply(HTTPStatus.FORBIDDEN, "cross-site request refused\n")
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode == 0:
+            self.reply(HTTPStatus.OK, "ok\n")
+        else:
+            self.reply(HTTPStatus.INTERNAL_SERVER_ERROR,
+                       result.stderr or f"{command[0]} exited with {result.returncode}\n")
+
+    def reply(self, status, body, content_type="text/plain; charset=utf-8"):
+        data = body.encode()
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, format, *args):
+        if self.path != "/status":  # the page asks every few seconds
+            super().log_message(format, *args)
+
+
+def main():
+    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

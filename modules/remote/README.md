@@ -15,14 +15,14 @@ The TV remote, through the TV's HDMI-CEC connection, and an on-screen keyboard f
 | Arrows | arrow keys | move the selection |
 | OK | Enter | type the selected key |
 | Back | Esc | close the keyboard |
-| Red | Home: Pegasus to the front (nothing closes) | Home |
-| Green | Close the app in front and show Pegasus | Close |
+| Green | Home: Pegasus to the front (nothing closes) | Home |
+| Red | Close the app in front and show Pegasus | Close |
 | Blue | open the keyboard | close the keyboard |
 | Numbers | digits | digits, typed straight into the app |
 | Channel ▲ / ▼ | Page Up / Page Down: scroll the page | the same |
 | Play, Pause, Rewind, Fast-forward | media keys | — |
 
-Red and Green press `XF86HomePage` and `XF86Close`, which labwc handles (see
+Green and Red press `XF86HomePage` and `XF86Close`, which labwc handles (see
 `../kiosk/labwc-rc.xml`).
 
 ## How `cec-remote` works
@@ -37,6 +37,10 @@ Red and Green press `XF86HomePage` and `XF86Close`, which labwc handles (see
 - If another program takes over the TV connection (Kodi's own CEC support does),
   puts its registration back after a few seconds.
 - Talks to the on-screen keyboard over `/run/cec-remote.sock` (group `input`).
+- Turns the TV on to its input, or puts it in standby, when asked over that socket:
+  `cec-remote tv on` or `cec-remote tv standby` (used by `kiosk wake` and
+  `kiosk standby`, see [wake](../wake/)). The Pi keeps its CEC address while the TV
+  is in standby, so the TV still hears it.
 
 `CEC_REMOTE_DEBUG=1` in the service's environment logs every button, to find out
 what a remote sends:

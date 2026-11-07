@@ -35,6 +35,7 @@ TILES = {
     "primevideo": ("prime video", ("#1a98ff", "#0f171e"), "primevideo.jpg", "fill 0.68"),
 }
 POWER_COLORS = ("#3a3a40", "#1e1e22")
+WAKE_COLORS = ("#1f9d55", "#0f5130")
 
 
 def rounded_mask():
@@ -138,9 +139,10 @@ def main():
             label(tile, text, SIZE / 2, 96)
         tile.save(OUT / f"{name}.png")
 
-    for name, text, symbol in (("reboot", "Reiniciar", restart_symbol),
-                               ("shutdown", "Desligar", power_symbol)):
-        tile = background(*POWER_COLORS)
+    for name, text, symbol, colors in (("reboot", "Reiniciar", restart_symbol, POWER_COLORS),
+                                       ("standby", "Modo espera", power_symbol, POWER_COLORS),
+                                       ("wakepc", "Ligar PC", power_symbol, WAKE_COLORS)):
+        tile = background(*colors)
         symbol(ImageDraw.Draw(tile), SIZE / 2, SIZE * 0.42, SIZE * 0.2, 26)
         label(tile, text, SIZE * 0.8, 64)
         tile.save(OUT / f"{name}.png")

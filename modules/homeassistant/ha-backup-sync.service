@@ -1,0 +1,6 @@
+[Unit]
+Description=Copy Home Assistant's backups to the PC
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ha-backup-sync

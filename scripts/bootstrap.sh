@@ -26,6 +26,8 @@ fi
 # shellcheck source=../couchpie.conf.example
 source "$REPO/couchpie.conf"
 KODI_FOLDER="/mnt/windows_share/$KODI_SHARE/"
+HA_BACKUP_DIR="/mnt/windows_share/${HA_BACKUP_SHARE:-sharedFolder}/couchpie/homeassistant-backups"
+TIMEZONE=$(timedatectl show -p Timezone --value)
 TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
 NOTES=()
@@ -35,9 +37,9 @@ step() { printf '\n== %s\n' "$*"; }
 # Fills in a template's @PLACEHOLDERS@ and prints the result
 render() {
     sed -e "s|@HOME@|$HOME|g" -e "s|@UID@|$(id -u)|g" -e "s|@GID@|$(id -g)|g" \
-        -e "s|@PC_HOST@|$PC_HOST|g" -e "s|@PC_ADDRESS@|$PC_ADDRESS|g" \
+        -e "s|@PC_HOST@|$PC_HOST|g" -e "s|@PC_ADDRESS@|$PC_ADDRESS|g" -e "s|@PC_MAC@|${PC_MAC:-}|g" \
         -e "s|@SMB_USER@|$SMB_USER|g" -e "s|@SHARE@|${SHARE:-}|g" \
-        -e "s|@KODI_FOLDER@|$KODI_FOLDER|g" \
+        -e "s|@KODI_FOLDER@|$KODI_FOLDER|g" -e "s|@HA_BACKUP_DIR@|$HA_BACKUP_DIR|g" -e "s|@TZ@|$TIMEZONE|g" \
         -e "s|@CEC_DEVICE@|$CEC_DEVICE|g" -e "s|@CEC_INPUT@|$CEC_INPUT|g" "$1"
 }
 
@@ -184,6 +186,27 @@ sudo systemctl enable cec-remote
 sudo systemctl restart cec-remote
 
 
+step "Waking the PC and the TV"
+if [ -z "${PC_MAC:-}" ]; then
+    NOTES+=("Add PC_MAC (the PC's wired network card) to couchpie.conf and run this again, or \"Ligar PC\" won't work.")
+fi
+install_template "$M/wake/wake-pc" "$HOME/.local/bin/wake-pc" 755
+install_template "$M/wake/wake-page" "$HOME/.local/bin/wake-page" 755
+install_template "$M/wake/wake-page.service" "$HOME/.config/systemd/user/wake-page.service"
+# A user service; lingering starts it at boot, whether or not the desktop has logged in
+sudo loginctl enable-linger "$USER"
+systemctl --user daemon-reload
+systemctl --user enable wake-page
+systemctl --user restart wake-page
+# Published to the tailnet only (not Funnel), with the Pi's ts.net HTTPS certificate
+if command -v tailscale > /dev/null && sudo tailscale serve --bg http://127.0.0.1:8095 > /dev/null; then
+    host=$(tailscale status --json | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')
+    NOTES+=("Wake page: open https://$host/ on the phone (with Tailscale on) and add it to the home screen.")
+else
+    NOTES+=("The wake page isn't on the tailnet: set up Tailscale with HTTPS certificates on, then run this again.")
+fi
+
+
 step "PC shared folders (SMB)"
 if ! sudo test -f /etc/cifs-creds; then
     install_system "$M/smb/cifs-creds.example" /etc/cifs-creds 600
@@ -201,6 +224,67 @@ for SHARE in $SMB_SHARES; do
     sudo systemctl disable "$unit.mount" 2> /dev/null || true  # earlier installs mounted at boot
     sudo systemctl enable --now "$unit.automount"
 done
+
+
+step "Home Assistant (Docker)"
+M_HA="$M/homeassistant"
+HA=/srv/homeassistant
+# Docker's log limits, so container logs can't fill the microSD card
+render "$M_HA/daemon.json" > "$TMP"
+if ! sudo cmp -s "$TMP" /etc/docker/daemon.json; then
+    sudo install -D -m 644 "$TMP" /etc/docker/daemon.json
+    systemctl is-active --quiet docker && sudo systemctl restart docker
+fi
+# Home Assistant needs Docker Engine 23 or later, newer than Debian's docker.io
+if ! dpkg -s docker-ce > /dev/null 2>&1; then
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc]" \
+        "https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" |
+        sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt-get update
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+fi
+
+install_system "$M_HA/compose.yaml" "$HA/compose.yaml"
+# configuration.yaml is Home Assistant's to keep once it exists; ours only on a fresh install
+if ! sudo test -f "$HA/config/configuration.yaml"; then
+    install_system "$M_HA/configuration.yaml" "$HA/config/configuration.yaml"
+    # The files it includes, as Home Assistant would create them
+    echo "[]" | sudo tee "$HA/config/automations.yaml" "$HA/config/scenes.yaml" > /dev/null
+    sudo touch "$HA/config/scripts.yaml"
+    sudo mkdir -p "$HA/config/themes"
+elif ! sudo grep -q "packages: !include_dir_named packages" "$HA/config/configuration.yaml"; then
+    NOTES+=("Add 'homeassistant: packages: !include_dir_named packages' to $HA/config/configuration.yaml, or couchPie's Home Assistant settings aren't loaded.")
+fi
+package_changed=false
+render "$M_HA/couchpie.yaml" > "$TMP"
+if ! sudo cmp -s "$TMP" "$HA/config/packages/couchpie.yaml"; then
+    sudo install -D -m 644 "$TMP" "$HA/config/packages/couchpie.yaml"
+    package_changed=true
+fi
+was_running=$(sudo docker ps -q -f name='^homeassistant$')
+echo "Starting Home Assistant; the first time, this downloads about 600 MB."
+sudo docker compose -f "$HA/compose.yaml" up -d
+# Home Assistant reads its YAML at start, so a running one needs a restart for ours
+if [ -n "$was_running" ] && $package_changed; then
+    sudo docker restart homeassistant > /dev/null
+fi
+
+# Backups are written on the Pi and copied to the PC whenever it's on
+install_system "$M_HA/ha-backup-sync" /usr/local/bin/ha-backup-sync 755
+install_system "$M_HA/ha-backup-sync.service" /etc/systemd/system/ha-backup-sync.service
+install_system "$M_HA/ha-backup-sync.timer" /etc/systemd/system/ha-backup-sync.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now ha-backup-sync.timer
+
+# On the tailnet with HTTPS, next to the wake page on 443
+if command -v tailscale > /dev/null && sudo tailscale serve --bg --https=8443 http://127.0.0.1:8123 > /dev/null; then
+    host=$(tailscale status --json | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')
+    NOTES+=("Home Assistant: https://$host:8443/ on the tailnet, or http://$(hostname).local:8123 at home. The first start takes a few minutes; then create your account there.")
+else
+    NOTES+=("Home Assistant: http://$(hostname).local:8123 (it isn't on the tailnet with HTTPS: set up Tailscale with HTTPS certificates, then run this again).")
+fi
 
 
 step "Kodi"

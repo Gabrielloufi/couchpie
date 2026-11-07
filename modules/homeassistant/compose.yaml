@@ -1,0 +1,32 @@
+# Home Assistant Container, next to couchPie. scripts/bootstrap.sh installs this to
+# /srv/homeassistant/compose.yaml; Home Assistant's own files are in ./config.
+#
+#   sudo docker compose -f /srv/homeassistant/compose.yaml pull     # fetch an update
+#   sudo docker compose -f /srv/homeassistant/compose.yaml up -d    # start it, or apply the update
+#   sudo docker logs -f homeassistant
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    # Finding devices (BroadLink, mDNS) needs the home network itself, not Docker's
+    network_mode: host
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      TZ: @TZ@
+    volumes:
+      - ./config:/config
+      - /etc/localtime:/etc/localtime:ro
+
+  # Text to speech for Home Assistant's voice assistant (Wyoming protocol, port 10200).
+  # Voices are downloaded into ./piper the first time they're used.
+  piper:
+    image: rhasspy/wyoming-piper:2.5.2
+    container_name: piper
+    network_mode: host
+    restart: unless-stopped
+    # Wyoming has no authentication, so only Home Assistant, on this Pi, can reach it
+    command: --uri tcp://127.0.0.1:10200 --voice pt_BR-faber-medium
+    volumes:
+      - ./piper:/data

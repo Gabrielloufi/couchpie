@@ -10,9 +10,13 @@ buttons go to it over a Unix socket instead.
 Socket protocol, one JSON object per line:
   client -> service  {"keyboard": true|false}   on-screen keyboard opened/closed
                      {"button": "up"}           act as if a remote button was pressed
+                     {"tv": "on"|"standby"}     turn the TV on to our input, or off
   service -> client  {"key": "up"}              remote button, while the keyboard is open
                      {"toggle": true}           open/close the keyboard
                      {"home": true}             home or close button; the keyboard closes
+
+  cec-remote                  run the service
+  cec-remote tv on|standby    ask the running service to turn the TV on or off
 """
 
 import fcntl
@@ -24,6 +28,7 @@ import select
 import socket
 import struct
 import subprocess
+import sys
 import time
 
 import evdev
@@ -40,7 +45,7 @@ REMOTE_KEYS = {
     e.KEY_UP: "up", e.KEY_DOWN: "down", e.KEY_LEFT: "left", e.KEY_RIGHT: "right",
     e.KEY_OK: "ok", e.KEY_SELECT: "ok", e.KEY_ENTER: "ok",
     e.KEY_EXIT: "back", e.KEY_BACK: "back",
-    e.KEY_RED: "home", e.KEY_GREEN: "close", e.KEY_BLUE: "keyboard",
+    e.KEY_GREEN: "home", e.KEY_RED: "close", e.KEY_BLUE: "keyboard",
 }
 # Remote keys that apps don't understand as they are: the number buttons arrive as
 # phone-keypad keys, which have no meaning on a desktop. The channel buttons scroll.
@@ -72,11 +77,13 @@ CEC_S_MODE = _ioc(1, 9, 4)
 CEC_MODE_INITIATOR = 0x01
 CEC_MODE_FOLLOWER = 0x10
 CEC_MSG = struct.Struct("=QQIIII16s7Bx")  # struct cec_msg
+TV = 0x00
 BROADCAST = 0x0F
 UNCONFIGURED = 0xFF
 INVALID_PHYS_ADDR = 0xFFFF
 
 FEATURE_ABORT = 0x00
+IMAGE_VIEW_ON = 0x04
 GIVE_DECK_STATUS = 0x1A
 DECK_STATUS = 0x1B
 STANDBY = 0x36
@@ -174,6 +181,16 @@ class Cec:
             self.transmit(BROADCAST, ACTIVE_SOURCE, pa >> 8, pa & 0xFF)
             self.active = True
 
+    def tv(self, power):
+        """Turn the TV on, showing our input, or put it in standby. Our logical
+        address survives the TV's standby, so it still hears us."""
+        if power == "on":
+            self.transmit(TV, IMAGE_VIEW_ON)
+            self.announce()
+        elif power == "standby":
+            self.transmit(TV, STANDBY)
+            self.active = False
+
     def messages(self):
         """Received messages waiting on the adapter, as bytes."""
         while True:
@@ -232,10 +249,11 @@ class Cec:
 class Keys:
     """Presses keys for remote buttons, or hands them to the on-screen keyboard."""
 
-    def __init__(self, remote):
+    def __init__(self, remote, cec):
         codes = (set(remote.capabilities().get(e.EV_KEY, []))
                  | set(BUTTON_KEYS.values()) | set(KEY_REMAP.values()))
         self.uinput = evdev.UInput({e.EV_KEY: sorted(codes)}, name="TV remote")
+        self.cec = cec
         self.held = {}     # remote key -> key we pressed for it
         self.clients = {}  # socket -> {"buf": bytes, "keyboard": bool}
 
@@ -316,6 +334,9 @@ class Keys:
                 client["keyboard"] = bool(msg["keyboard"])
             if "button" in msg:
                 self.button(msg["button"])
+            if "tv" in msg:
+                log.info("TV %s, asked by a client", msg["tv"])
+                self.cec.tv(msg["tv"])
         return True
 
 
@@ -330,7 +351,18 @@ def listen(path):
     return server
 
 
+def tv_command(power):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.connect(SOCKET_PATH)
+        sock.sendall((json.dumps({"tv": power}) + "\n").encode())
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "tv" and sys.argv[2] in ("on", "standby"):
+        tv_command(sys.argv[2])
+        return
+    if len(sys.argv) > 1:
+        sys.exit(__doc__.split("\n\n")[-1])
     # CEC_REMOTE_DEBUG=1 logs every button, for finding out what a remote sends
     debug = os.environ.get("CEC_REMOTE_DEBUG")
     logging.basicConfig(level=logging.DEBUG if debug else logging.INFO, format="%(message)s")
@@ -340,7 +372,7 @@ def main():
         raise SystemExit(f"no input device named {RC_INPUT_NAME}")
     remote.grab()  # its keys now reach apps only through us
     cec = Cec(CEC_DEVICE)
-    keys = Keys(remote)
+    keys = Keys(remote, cec)
     server = listen(SOCKET_PATH)
 
     poller = select.poll()

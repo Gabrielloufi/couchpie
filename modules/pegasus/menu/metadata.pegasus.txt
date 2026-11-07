@@ -19,7 +19,7 @@ game: Área de Trabalho
 file: kiosk:desktop
 sort-by: 01
 launch: @HOME@/.local/bin/kiosk run desktop
-description: Fecha este menu e abre o Raspberry Pi OS. O botão vermelho do controle, Ctrl+Alt+K ou o ícone do Pegasus na área de trabalho trazem o menu de volta.
+description: Fecha este menu e abre o Raspberry Pi OS. O botão verde do controle, Ctrl+Alt+K ou o ícone do Pegasus na área de trabalho trazem o menu de volta.
 assets.boxFront: media/raspberrypi.png
 
 game: Streaming
@@ -35,51 +35,58 @@ launch: @HOME@/.local/bin/kiosk run youtube
 description: YouTube com a interface de TV, feita para o controle remoto. Para entrar na sua conta, siga as instruções na tela.
 assets.boxFront: media/youtube.png
 
+game: Ligar PC
+file: kiosk:wakepc
+sort-by: 04
+launch: @HOME@/.local/bin/kiosk run wakepc
+description: Liga o @PC_HOST@ pela rede (Wake-on-LAN). Ele leva uns 30 segundos para ficar pronto; depois abra o Steam ou a Área de Trabalho do PC.
+assets.boxFront: media/wakepc.png
+
 game: Steam Big Picture
 file: kiosk:steam
-sort-by: 04
+sort-by: 05
 launch: @HOME@/.local/bin/kiosk run steam
 description: Transmite o Steam Big Picture do @PC_HOST@ pelo Moonlight.
 assets.boxFront: media/steam.png
 
 game: Área de Trabalho do PC
 file: kiosk:pc
-sort-by: 05
+sort-by: 06
 launch: @HOME@/.local/bin/kiosk run pc
 description: Transmite a área de trabalho do Windows do @PC_HOST@ pelo Moonlight.
 assets.boxFront: /usr/share/icons/gnome/256x256/devices/computer.png
 
 game: Moonlight
 file: kiosk:moonlight
-sort-by: 06
+sort-by: 07
 launch: @HOME@/.local/bin/kiosk run moonlight
 description: Abre o app Moonlight para escolher um computador ou app.
 assets.boxFront: /usr/share/icons/hicolor/scalable/apps/moonlight.svg
 
 game: Kodi
 file: kiosk:kodi
-sort-by: 07
+sort-by: 08
 launch: @HOME@/.local/bin/kiosk run kodi
 description: Central de mídia.
 assets.boxFront: /usr/share/icons/hicolor/256x256/apps/kodi.png
 
 game: Navegador
 file: kiosk:browser
-sort-by: 08
+sort-by: 09
 launch: @HOME@/.local/bin/kiosk run browser
-description: Chromium em tela cheia. As setas pulam entre links, OK abre, Voltar volta para a página anterior, azul abre o teclado e verde fecha.
+description: Chromium em tela cheia. As setas pulam entre links, OK abre, Voltar volta para a página anterior, azul abre o teclado e vermelho fecha.
 assets.boxFront: /usr/share/icons/hicolor/256x256/apps/chromium.png
 
 game: Reiniciar
 file: kiosk:reboot
-sort-by: 09
+sort-by: 10
 launch: @HOME@/.local/bin/kiosk run reboot
 description: Reinicia o Raspberry Pi. Pede confirmação antes.
 assets.boxFront: media/reboot.png
 
-game: Desligar
-file: kiosk:shutdown
-sort-by: 10
-launch: @HOME@/.local/bin/kiosk run shutdown
-description: Desliga o Raspberry Pi. Pede confirmação antes. Aperte o botão de energia do Pi para ligar de novo.
-assets.boxFront: media/shutdown.png
+game: Modo espera
+file: kiosk:standby
+sort-by: 11
+launch: @HOME@/.local/bin/kiosk run standby
+description: Desliga a TV. O Raspberry Pi continua ligado, para o celular e o PC alcançarem a casa pelo Tailscale. Ligue a TV pelo controle, ou pela página do couchPie no celular.
+assets.boxFront: media/standby.png
