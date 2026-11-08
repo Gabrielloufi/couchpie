@@ -34,6 +34,11 @@ Start-Transcript -Path "$Logs\setup-admin.log" -Append | Out-Null
 # Firewall: only the Pi and the tailnet. No -Program filter: the venv's python.exe only
 # launches the real interpreter, which is the process that listens.
 Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+# Also drop the rules Windows makes for this Python from its "allow access?" prompt (when
+# the server runs by hand): an allow rule would let anyone in on any port, and a block rule
+# would override the one below
+Get-NetFirewallApplicationFilter | Where-Object { $_.Program -like 'C:\local-ai\whisper\python\*' } |
+    Get-NetFirewallRule | Where-Object { $_.Direction -eq 'Inbound' } | Remove-NetFirewallRule
 New-NetFirewallRule -DisplayName $RuleName -Direction Inbound -Action Allow -Protocol TCP `
     -LocalPort $Port -RemoteAddress $Allowed -Profile Private | Out-Null
 "Firewall rule '$RuleName': TCP $Port from $($Allowed -join ', ')"
