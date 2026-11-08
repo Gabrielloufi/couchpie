@@ -8,16 +8,17 @@ the same listener, on 2026-11-07. Each one was checked for an existing install f
 | 1 | Piper, text to speech (male voices; the voice for when the PC is off) | Pi, container | `127.0.0.1:10200` (Wyoming) | **Working** |
 | 2 | Whisper, speech to text | PC GPU | `192.168.0.158:10300` (Wyoming) | **Working**, checked from the Pi |
 | 3 | llama-server, the LLM | PC GPU | `http://192.168.0.158:8080/v1` | **Working**, checked from the Pi |
-| 4 | **F5-TTS, text to speech, voice "dora"** (your pick) | PC GPU | `192.168.0.158:10200` (Wyoming) | Works; **boot task needs an admin run** |
+| 4 | **F5-TTS, text to speech, voice "dora"** (your pick) | PC GPU | `192.168.0.158:10200` (Wyoming) | **Working**, checked from the Pi |
 
-## Before testing: run on the PC, in PowerShell as administrator
+## Admin setup on the PC (done)
+
+The three admin scripts each add a firewall rule and a boot task, and they're safe to run
+again. Whisper's and llama-server's ran on 2026-11-07, F5-TTS's on 2026-11-08 (it spoke its
+test sentence as LOCAL SERVICE):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File D:\local-ai\f5-tts\setup-admin.ps1
 ```
-
-It adds F5-TTS's firewall rule and boot task, then checks that it speaks. It's safe to run
-again. Whisper's and llama-server's scripts already ran (2026-11-07).
 
 The first try of Whisper's script made its firewall rule but failed on the task. It named
 the account `NT AUTHORITY\LOCAL SERVICE`, which is `AUTORIDADE NT\SERVIÇO LOCAL` on this
@@ -98,10 +99,14 @@ Windows. Both scripts now look accounts up by their SID.
   word, 0.24 s after the audio ended.
 - **llama-server:** `/v1/models` lists all 7 models. `gemma-4-12b` answered in Portuguese at
   51 tokens/s; a short reply with the model already loaded took 0.2 s.
+- **F5-TTS (2026-11-08):**
+  - Replies took 1.8–2.1 s, and 3.6 s for the first one after the server started.
+  - Accents arrived intact, and "21,5 °C", "63%", "17:00" and "8:30" were spoken as words.
+  - About one short reply in six starts with a stray "E" ("E pronto, liguei..."): F5
+    adds it now and then. Putting punctuation before the text didn't help.
 
 ## Not checked yet
 
-- **F5-TTS from the Pi**, after its admin run (above).
 - **Whisper, F5-TTS and llama-server starting before login:** needs a PC reboot.
 - **Thinking:** if the LLM's spoken replies are slow because it thinks first, turn thinking
   off for voice in `models.ini`.
