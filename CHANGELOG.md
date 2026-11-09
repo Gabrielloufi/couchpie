@@ -12,7 +12,8 @@ Stage 1, running on a Raspberry Pi 5.
 ### Added
 
 - `NOTICE`: the license notice, with an additional term under section 7(b) of the AGPL:
-  copies and works based on couchPie keep the attribution "Based on couchPie".
+  copies and works based on couchPie keep the attribution "Based on couchPie, free and
+  open-source software, available at no cost at https://github.com/Gabrielloufi/couchpie".
 - `CONTRIBUTING.md` with the DCO sign-off rule, checked on every pull request by
   `.github/workflows/dco.yml`; `GOVERNANCE.md`; `TRADEMARKS.md`; `THIRD_PARTY.md`.
 - `scripts/bootstrap.sh`: installs couchPie on Raspberry Pi OS Bookworm, settings

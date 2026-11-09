@@ -37,9 +37,10 @@ Write to the maintainer through an issue on the official repository.
 ## Forks
 
 Forks are welcome; that is part of free software. A fork that is distributed needs its own
-name and logo. It must keep the attribution "Based on couchPie" with the link to the official
-repository, as the license's additional term in [NOTICE](NOTICE) requires; that attribution
-is not a use of the name as the fork's own name.
+name and logo. It must keep the attribution "Based on couchPie, free and open-source
+software, available at no cost at https://github.com/Gabrielloufi/couchpie", as the license's
+additional term in [NOTICE](NOTICE) requires; that attribution is not a use of the name as
+the fork's own name.
 
 ## Other companies' names
 
