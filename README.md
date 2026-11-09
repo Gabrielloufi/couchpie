@@ -139,6 +139,17 @@ sudo reboot
 * [ ] A voice satellite on the Pi (USB mic and speaker)
 * [ ] Alexa through Home Assistant
 
+### Stage 4 – Phone companion
+
+The phone becomes the TV's second remote: a pointer, a keyboard and a way to find things.
+
+* [ ] Pair a phone by scanning a QR code on the TV (one-time token, paired-device list, revoke)
+* [ ] Phone as a touchpad and pointer: a red dot on the TV, moved by touch or by the phone's motion sensors, snapping to what can be clicked
+* [ ] Type on the phone's keyboard into the TV (logins, searches), instead of the on-screen keyboard
+* [ ] Search and "something funny for 30 minutes": suggestions from a local cache of popular titles on your services ([TMDB](https://www.themoviedb.org) data), sent to the TV with one tap
+* [ ] Push-to-talk voice from the phone, and "cast this link to the TV"
+* [ ] Optional: one "continue watching" row across the streaming services
+
 ### Later
 
 * [ ] Bluetooth gamepads (8BitDo) and EmulationStation for retro games
