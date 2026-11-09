@@ -149,7 +149,8 @@ arrows (HDMI-CEC) can't move around a page or an app, the phone can point at it.
 * [ ] Phone as a touchpad, then as a motion pointer: a red dot on the TV that snaps to what can be clicked, and works where arrow navigation fails (HTTPS needed for the motion sensors, e.g. over Tailscale)
 * [ ] Type on the phone's keyboard into the TV (logins, searches), instead of the on-screen keyboard
 * [ ] Phone as an ally: search from the phone, push-to-talk voice, and "cast this link to the TV"
-* [ ] Phone as a gamepad, for the emulators and for Moonlight: a touch controller on the phone becomes a virtual gamepad on the Pi, one phone per player, so a phone and couchPie are enough to play anywhere
+* [ ] **Phone as a joystick, several phones as several players** (a core feature, since couchPie is a living-room media centre): a touch controller on each phone becomes its own virtual gamepad on the Pi, for the emulators and for Moonlight, so a phone and couchPie are enough to play anywhere
+* [ ] Cozy living-room games for friends, played with the phones as controllers: party and board-style games that run on the Pi (a browser game on the TV, a phone page per player), in English and pt-BR; also evaluate existing phone-controller game platforms and tabletop games (e.g. streamed from the PC with Moonlight)
 * [ ] Cross-service search: type or say a title once and jump to it in the right service
 * [ ] One "continue watching" row across the streaming services, filled from what you opened and played
 
