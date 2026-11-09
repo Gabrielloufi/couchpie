@@ -4,6 +4,11 @@
 
 Stage 1, running on a Raspberry Pi 5.
 
+### Changed
+
+- License: from Apache-2.0 to AGPL-3.0-or-later, so that modified versions, including
+  ones offered as a service, stay open. Earlier published versions remain Apache-2.0.
+
 ### Added
 
 - `scripts/bootstrap.sh`: installs couchPie on Raspberry Pi OS Bookworm, settings

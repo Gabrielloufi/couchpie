@@ -153,21 +153,19 @@ Brazilian Portuguese version (`README.pt-br.md`) is welcome.
 
 ## 📚 License
 
-This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU Affero General Public License, version 3 or (at your
+option) any later version (`AGPL-3.0-or-later`). See the [LICENSE](LICENSE) file for details.
 
 Copyright 2025 CouchPie Team
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+In short: you can use, study, change and share couchPie, but if you distribute a modified
+version, or run one that people use over a network, you must offer them its source code under
+the same license. This is meant to keep couchPie and its forks open.
 
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Versions published before the license change (up to and including the commit before this
+change) were released under the Apache License, Version 2.0, and remain available to those
+who received them under those terms. The name "couchPie" and its logo are not covered by the
+license.
 
 Note: This project does not redistribute Raspberry Pi OS images. Models used by the voice
 services have their own licenses (F5-TTS's pt-br checkpoint, for example, is non-commercial).
