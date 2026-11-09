@@ -149,6 +149,7 @@ arrows (HDMI-CEC) can't move around a page or an app, the phone can point at it.
 * [ ] Phone as a touchpad, then as a motion pointer: a red dot on the TV that snaps to what can be clicked, and works where arrow navigation fails (HTTPS needed for the motion sensors, e.g. over Tailscale)
 * [ ] Type on the phone's keyboard into the TV (logins, searches), instead of the on-screen keyboard
 * [ ] Phone as an ally: search from the phone, push-to-talk voice, and "cast this link to the TV"
+* [ ] Phone as a gamepad, for the emulators and for Moonlight: a touch controller on the phone becomes a virtual gamepad on the Pi, one phone per player, so a phone and couchPie are enough to play anywhere
 * [ ] Cross-service search: type or say a title once and jump to it in the right service
 * [ ] One "continue watching" row across the streaming services, filled from what you opened and played
 
@@ -173,7 +174,7 @@ arrows (HDMI-CEC) can't move around a page or an app, the phone can point at it.
 
 ### Later
 
-* [ ] Bluetooth gamepads (8BitDo) and EmulationStation for retro games
+* [ ] Easy retro games: RetroArch emulators behind a Pegasus "Jogos" folder, shipped with free and homebrew games (you add your own game files), playable with phones or Bluetooth gamepads (8BitDo)
 * [ ] Home Assistant on a machine of its own
 * [ ] An image builder: a ready-to-boot SD card
 
