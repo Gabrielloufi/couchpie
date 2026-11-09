@@ -10,6 +10,18 @@ sites themselves.
 
 The TV interface is in Brazilian Portuguese.
 
+## Why couchPie
+
+couchPie wants to be three things at once: a **saviour for old smart TVs** and a media centre
+you control, a **low-cost game platform** (retro games, games streamed from a PC, and phones
+as controllers), and a **party games enabler** for friends in the living room. Consoles and
+games are expensive, especially in Brazil; couchPie is meant to be cheap and free to use,
+and open for anyone to learn from, change and improve.
+
+The software is free and open source, and stays that way. A ready-made couchPie box may be
+sold in the future for convenience (assembled, set up and supported), running the same open
+software. See [GOVERNANCE.md](GOVERNANCE.md).
+
 ## How it fits together
 
 ```
@@ -100,6 +112,10 @@ sudo reboot
 | [docs/en/architecture.md](docs/en/architecture.md) | How the pieces talk to each other |
 | [docs/en/troubleshooting.md](docs/en/troubleshooting.md) | When something doesn't work |
 | [CHANGELOG.md](CHANGELOG.md) | What changed |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute, and signing commits (DCO) |
+| [GOVERNANCE.md](GOVERNANCE.md) | The project's goals, and who decides |
+| [TRADEMARKS.md](TRADEMARKS.md) | Using the couchPie name and logo |
+| [THIRD_PARTY.md](THIRD_PARTY.md) | Software, services and models from others, and their licenses |
 
 ## Hardware
 
@@ -165,7 +181,9 @@ the same license. This is meant to keep couchPie and its forks open.
 Versions published before the license change (up to and including the commit before this
 change) were released under the Apache License, Version 2.0, and remain available to those
 who received them under those terms. The name "couchPie" and its logo are not covered by the
-license.
+license; see [TRADEMARKS.md](TRADEMARKS.md).
 
-Note: This project does not redistribute Raspberry Pi OS images. Models used by the voice
-services have their own licenses (F5-TTS's pt-br checkpoint, for example, is non-commercial).
+Software, services and models from other projects keep their own licenses; see
+[THIRD_PARTY.md](THIRD_PARTY.md). This project does not redistribute Raspberry Pi OS images.
+Models used by the voice services have their own licenses (F5-TTS's pt-br checkpoint, for
+example, is non-commercial).
