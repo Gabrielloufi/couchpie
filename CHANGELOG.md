@@ -6,8 +6,13 @@ Stage 1, running on a Raspberry Pi 5.
 
 ### Changed
 
-- License: from Apache-2.0 to AGPL-3.0-or-later, so that modified versions, including
-  ones offered as a service, stay open. Earlier published versions remain Apache-2.0.
+- License: AGPL-3.0-or-later, so that modified versions, including ones offered as a
+  service, stay open.
+
+### Added
+
+- `CONTRIBUTING.md` with the DCO sign-off rule, checked on every pull request by
+  `.github/workflows/dco.yml`; `GOVERNANCE.md`; `TRADEMARKS.md`; `THIRD_PARTY.md`.
 
 ### Added
 

@@ -35,6 +35,7 @@ Signed-off-by: Your Name <your.email@example.com>
 ```
 
 Use your real name (or the name you are publicly known by) and an email you can be reached at.
+A check on every pull request (`.github/workflows/dco.yml`) fails if a commit has no sign-off.
 To sign off commits you already made: `git commit --amend -s` for the last one, or
 `git rebase --signoff main` for all the commits on your branch.
 

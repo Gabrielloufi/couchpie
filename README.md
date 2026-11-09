@@ -178,10 +178,8 @@ In short: you can use, study, change and share couchPie, but if you distribute a
 version, or run one that people use over a network, you must offer them its source code under
 the same license. This is meant to keep couchPie and its forks open.
 
-Versions published before the license change (up to and including the commit before this
-change) were released under the Apache License, Version 2.0, and remain available to those
-who received them under those terms. The name "couchPie" and its logo are not covered by the
-license; see [TRADEMARKS.md](TRADEMARKS.md).
+The name "couchPie" and its logo are not covered by the license; see
+[TRADEMARKS.md](TRADEMARKS.md).
 
 Software, services and models from other projects keep their own licenses; see
 [THIRD_PARTY.md](THIRD_PARTY.md). This project does not redistribute Raspberry Pi OS images.
