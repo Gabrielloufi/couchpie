@@ -242,9 +242,12 @@ version, or run one that people use over a network, you must offer them its sour
 the same license. This is meant to keep couchPie and its forks open.
 
 The license comes with one additional term, allowed by its section 7(b): every copy and every
-work based on couchPie must keep the attribution "Based on couchPie
-(https://github.com/Gabrielloufi/couchpie)" in the source, on its About or credits screen, and
-in its documentation. See [NOTICE](NOTICE).
+work based on couchPie must keep the attribution "Based on couchPie, free and open-source
+software, available at no cost at https://github.com/Gabrielloufi/couchpie" in the source, on
+its About or credits screen, and in its documentation. See [NOTICE](NOTICE).
+
+couchPie is free. If you paid for a box, you paid for the hardware and the service; the
+software is always free here.
 
 The name "couchPie" and its logo are not covered by the license; see
 [TRADEMARKS.md](TRADEMARKS.md).
