@@ -150,7 +150,14 @@ arrows (HDMI-CEC) can't move around a page or an app, the phone can point at it.
 * [ ] Type on the phone's keyboard into the TV (logins, searches), instead of the on-screen keyboard
 * [ ] Phone as an ally: search from the phone, push-to-talk voice, and "cast this link to the TV"
 * [ ] **Phone as a joystick, several phones as several players** (a core feature, since couchPie is a living-room media centre): a touch controller on each phone becomes its own virtual gamepad on the Pi, for the emulators and for Moonlight, so a phone and couchPie are enough to play anywhere
-* [ ] Cozy living-room games for friends, played with the phones as controllers: party and board-style games that run on the Pi (a browser game on the TV, a phone page per player), in English and pt-BR; also evaluate existing phone-controller game platforms and tabletop games (e.g. streamed from the PC with Moonlight)
+* [ ] Cozy living-room games for friends, played with the phones as controllers: party and board-style games that run on the Pi (a browser game on the TV, a phone page per player), in English and pt-BR. Original games with their own names and art, inspired by familiar genres:
+  * [ ] A shedding card game in the style of Uno (match colour or number, special cards)
+  * [ ] A clue-guessing quiz in the style of Perfil: tips are revealed one by one and fewer tips means more points; the secret card shows on one phone
+  * [ ] Dominoes
+  * [ ] Classic card games with a standard deck: Truco, Buraco, Copas (Hearts) and others, each hand shown privately on the phone
+  * [ ] A browser party game with minigames and a board, in the style of Mario Party: original characters, short minigames played with the phones (tap, tilt, swipe), and scores that carry across rounds
+  * [ ] Quick extras: drawing and guessing, word games, trivia
+  * [ ] Evaluate existing phone-controller game platforms and tabletop games (e.g. streamed from the PC with Moonlight)
 * [ ] Cross-service search: type or say a title once and jump to it in the right service
 * [ ] One "continue watching" row across the streaming services, filled from what you opened and played
 
