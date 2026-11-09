@@ -155,6 +155,7 @@ sudo reboot
 * [ ] A 7" touch screen dashboard next to the TV
 * [ ] A voice satellite on the Pi (USB mic and speaker)
 * [ ] Alexa through Home Assistant
+* [ ] Pi-hole or AdGuard Home on the Pi: ad and tracker blocking for the whole home network, and in travel router mode. It blocks ordinary web ads and trackers, not the streaming services' own ads (often stitched into the video); a fallback keeps DNS working when the Pi is down
 
 ### Stage 4 – Phone as remote and ally (next up)
 
