@@ -161,6 +161,7 @@ sudo reboot
 The phone becomes the TV's second remote. The pointer is the key idea: where the TV remote's
 arrows (HDMI-CEC) can't move around a page or an app, the phone can point at it.
 
+* [ ] A "Sobre" (About) tile on the home screen and a footer on the phone pages, showing the license, the attribution in [NOTICE](NOTICE), the credits for third-party software, and a link to the source code
 * [ ] Reliable remote navigation: per-site profiles for the streaming sites and a test harness (`scripts/qa-nav.py`) that catches a site's redesign before you do
 * [ ] Pair a phone by scanning a QR code on the TV (one-time token, paired-device list, revoke)
 * [ ] Phone as a touchpad, then as a motion pointer: a red dot on the TV that snaps to what can be clicked, and works where arrow navigation fails (HTTPS needed for the motion sensors, e.g. over Tailscale)
@@ -239,6 +240,11 @@ Copyright 2025 CouchPie Team
 In short: you can use, study, change and share couchPie, but if you distribute a modified
 version, or run one that people use over a network, you must offer them its source code under
 the same license. This is meant to keep couchPie and its forks open.
+
+The license comes with one additional term, allowed by its section 7(b): every copy and every
+work based on couchPie must keep the attribution "Based on couchPie
+(https://github.com/Gabrielloufi/couchpie)" in the source, on its About or credits screen, and
+in its documentation. See [NOTICE](NOTICE).
 
 The name "couchPie" and its logo are not covered by the license; see
 [TRADEMARKS.md](TRADEMARKS.md).

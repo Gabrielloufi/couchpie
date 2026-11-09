@@ -11,11 +11,10 @@ Stage 1, running on a Raspberry Pi 5.
 
 ### Added
 
+- `NOTICE`: the license notice, with an additional term under section 7(b) of the AGPL:
+  copies and works based on couchPie keep the attribution "Based on couchPie".
 - `CONTRIBUTING.md` with the DCO sign-off rule, checked on every pull request by
   `.github/workflows/dco.yml`; `GOVERNANCE.md`; `TRADEMARKS.md`; `THIRD_PARTY.md`.
-
-### Added
-
 - `scripts/bootstrap.sh`: installs couchPie on Raspberry Pi OS Bookworm, settings
   from `couchpie.conf`.
 - Pegasus home screen with the "Kiosk TV" theme: made for the TV remote, folders,
