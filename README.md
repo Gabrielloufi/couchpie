@@ -157,8 +157,14 @@ arrows (HDMI-CEC) can't move around a page or an app, the phone can point at it.
   * [ ] Dominoes
   * [ ] Classic card games with a standard deck: Truco, Buraco, Copas (Hearts) and others, each hand shown privately on the phone
   * [ ] A browser party game with minigames and a board, in the style of Mario Party: original characters, short minigames played with the phones (tap, tilt, swipe), and scores that carry across rounds
-  * [ ] Quick extras: drawing and guessing, word games, trivia
+  * [ ] Quick extras: word games, trivia
   * [ ] Evaluate existing phone-controller game platforms and tabletop games (e.g. streamed from the PC with Moonlight)
+* [ ] **Photo avatars** (a must have): each player takes a selfie when joining, and it is their token, scoreboard face and player icon in every game
+* [ ] Draw on the phone, shown on the TV: drawing-and-guessing games where everyone draws on their phone and the drawings appear on the screen
+* [ ] Photo scavenger hunt: the TV gives a challenge ("find something red"), everyone races to photograph one, and the group votes thumbs up or thumbs down on each photo from their phones
+* [ ] Fit through the wall: a camera on a stand watches the players, a wall with a cut-out shape comes toward the screen, and they must strike a pose that fits through; the score is also how long they can hold awkward positions (balance, one leg, and so on)
+* [ ] Morto/vivo (a Simon-says game): a leader gets the commands on their phone and calls them out; the others follow, and the camera checks who did the move (stand up, crouch, touch your head). Each player has their own lane or spot on screen, so the game knows who is who
+* [ ] Camera and microphone rules for every game: the analysis runs on the phone, only results (pose points, a score, a chosen photo) go to the Pi, nothing is recorded unless someone saves it, and the TV shows when a camera is on. Movement games remind players to check their space and stop if anything hurts. (Camera and microphone need HTTPS.)
 * [ ] Cross-service search: type or say a title once and jump to it in the right service
 * [ ] One "continue watching" row across the streaming services, filled from what you opened and played
 
@@ -169,6 +175,8 @@ Experiments to run first, to find out what is possible before building on it:
 * [ ] A phone-controller party game of the Jackbox kind, streamed through Moonlight (players join from their phone's browser, so only the video is streamed)
 * [ ] Steam Remote Play Together as the fallback if Moonlight's controller passthrough is awkward
 * [ ] The motion sensors on a real iPhone and a real Android phone over HTTPS (Tailscale name), to see what works before choosing the pointer design
+* [ ] Body-pose detection in the phone's browser, on a real iPhone and a real Android phone: speed, battery and heat, and how it copes with two or three people in view
+* [ ] Several phone cameras for a wider view: side-by-side tiles first, then combining the body positions each phone sees into one shared picture
 * [ ] A USB Wi-Fi adapter on the Pi 5: driver support, the Pi's access point and the hotel-style uplink running together, and a long-running stability test
 
 ### Stage 5 – Profiles and continue
