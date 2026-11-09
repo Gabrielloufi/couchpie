@@ -35,7 +35,8 @@ Pegasus tile ─> kiosk run <id> ─> app started detached, or brought to the fr
 | SMB mounts | [smb](../../modules/smb/) | The PC's shared folders, mounted on demand. |
 | Moonlight + Sunshine | (packages), [streaming](../../modules/streaming/) | Streams Steam Big Picture or the PC's desktop; the red button quits the app on the PC. |
 | Home Assistant | [homeassistant](../../modules/homeassistant/) | Home automation, in Docker beside the rest; backups copied to the PC. |
-| Whisper, F5-TTS, llama-server | [voice](../../modules/voice/) | On the PC's GPU: speech to text, text to speech and the LLM for Home Assistant's voice assistant. |
+| Whisper, F5-TTS, llama-server | Not in this repository | On the PC's GPU: speech to text, text to speech and the LLM for Home Assistant's voice assistant. |
+| PiPA | [pipa-assistant](https://github.com/Gabrielloufi/pipa-assistant) | The personal assistant behind the voice and Telegram, on the Pi; its language model is the PC's. |
 | `wake-pc`, wake page | [wake](../../modules/wake/) | Wakes the PC over the network; the page lets the phone and the PC wake the PC and turn the TV on or off over Tailscale. The Pi stays on to do it. |
 
 ## Decisions worth knowing
