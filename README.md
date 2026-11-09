@@ -139,16 +139,37 @@ sudo reboot
 * [ ] A voice satellite on the Pi (USB mic and speaker)
 * [ ] Alexa through Home Assistant
 
-### Stage 4 – Phone companion
+### Stage 4 – Phone as remote and ally (next up)
 
-The phone becomes the TV's second remote: a pointer, a keyboard and a way to find things.
+The phone becomes the TV's second remote. The pointer is the key idea: where the TV remote's
+arrows (HDMI-CEC) can't move around a page or an app, the phone can point at it.
 
+* [ ] Reliable remote navigation: per-site profiles for the streaming sites and a test harness (`scripts/qa-nav.py`) that catches a site's redesign before you do
 * [ ] Pair a phone by scanning a QR code on the TV (one-time token, paired-device list, revoke)
-* [ ] Phone as a touchpad and pointer: a red dot on the TV, moved by touch or by the phone's motion sensors, snapping to what can be clicked
+* [ ] Phone as a touchpad, then as a motion pointer: a red dot on the TV that snaps to what can be clicked, and works where arrow navigation fails (HTTPS needed for the motion sensors, e.g. over Tailscale)
 * [ ] Type on the phone's keyboard into the TV (logins, searches), instead of the on-screen keyboard
-* [ ] Search and "something funny for 30 minutes": suggestions from a local cache of popular titles on your services ([TMDB](https://www.themoviedb.org) data), sent to the TV with one tap
-* [ ] Push-to-talk voice from the phone, and "cast this link to the TV"
-* [ ] Optional: one "continue watching" row across the streaming services
+* [ ] Phone as an ally: search from the phone, push-to-talk voice, and "cast this link to the TV"
+* [ ] Cross-service search: type or say a title once and jump to it in the right service
+* [ ] One "continue watching" row across the streaming services, filled from what you opened and played
+
+### Stage 5 – Profiles and continue
+
+* [ ] Profile selection in Pegasus ("who's watching"): each profile has its own browser logins, history and tiles
+* [ ] Continue last seen: a home-screen row that resumes the last title, per profile
+
+### Stage 6 – Search in my services
+
+* [ ] A local cache of popular titles on the services you have, with genres, runtime, ratings and where to watch ([TMDB](https://www.themoviedb.org) data, your own API key), refreshed weekly
+* [ ] Search and filters over it (genre, runtime, service), by phone, keyboard or voice, with one-tap launch
+
+### Stage 7 – An LLM to search
+
+* [ ] Free-form requests turned into filters over the cache ("comédia curta, até 30 minutos"), with the local LLM only choosing the filters, never inventing titles
+* [ ] Voice requests for the same, in Portuguese and English
+
+### Stage 8 – An LLM to suggest
+
+* [ ] Suggestions that learn your taste per profile ("something funny for 30 minutes"), explained in a sentence, from the cache and the watch history
 
 ### Later
 
@@ -158,9 +179,12 @@ The phone becomes the TV's second remote: a pointer, a keyboard and a way to fin
 
 ## 🌐 Language
 
-The TV interface is in Brazilian Portuguese: the home screen, Pegasus's menus, the on-screen
-keyboard, the websites the tiles open, and the voice. The documentation is in English; a
-Brazilian Portuguese version (`README.pt-br.md`) is welcome.
+couchPie is bilingual, English and Brazilian Portuguese (pt-BR), throughout: the TV interface
+(the home screen, Pegasus's menus, the on-screen keyboard, the phone companion), the voice
+(speech recognition, commands and answers) and the documentation. Today the TV interface and
+the voice are pt-BR and the documentation is English; every new feature on the roadmap is
+meant to ship in both languages, and a Brazilian Portuguese version of the documentation
+(`README.pt-br.md`) is welcome.
 
 ## 📚 License
 
