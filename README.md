@@ -98,6 +98,7 @@ sudo reboot
 | [rebuild-yourself.md](rebuild-yourself.md) | The whole system, step by step |
 | [docs/en/install.md](docs/en/install.md) | The TV box alone, and everyday commands |
 | [docs/en/architecture.md](docs/en/architecture.md) | How the pieces talk to each other |
+| [docs/en/wifi-adapter.md](docs/en/wifi-adapter.md) | Choosing a USB Wi-Fi adapter (for travel router mode) |
 | [docs/en/troubleshooting.md](docs/en/troubleshooting.md) | When something doesn't work |
 | [CHANGELOG.md](CHANGELOG.md) | What changed |
 
@@ -127,7 +128,7 @@ sudo reboot
 * [x] Wake-on-LAN for the PC, from the remote or from the phone anywhere; standby turns the TV off
 * [x] The PC on Tailscale before anyone logs in (unattended mode)
 * [ ] Moonlight and the PC's folders over Tailscale when away from home
-* [ ] Travel router mode (access point + hotel Wi-Fi), with captive portal handling
+* [ ] Travel router mode (access point + hotel Wi-Fi), with captive portal handling; a USB Wi-Fi adapter for the hotel uplink, see [docs/en/wifi-adapter.md](docs/en/wifi-adapter.md) for what to check before buying
 
 ### Stage 3 – Smart home and voice
 
@@ -160,6 +161,15 @@ arrows (HDMI-CEC) can't move around a page or an app, the phone can point at it.
   * [ ] Evaluate existing phone-controller game platforms and tabletop games (e.g. streamed from the PC with Moonlight)
 * [ ] Cross-service search: type or say a title once and jump to it in the right service
 * [ ] One "continue watching" row across the streaming services, filled from what you opened and played
+
+Experiments to run first, to find out what is possible before building on it:
+
+* [ ] One virtual phone gamepad (`uinput`) in a single-player Steam game through Moonlight and Sunshine: does Moonlight see the pad, are the sticks and buttons right, and how does the latency feel?
+* [ ] Two phones as two virtual gamepads in a local co-op or party game on Steam: how many pads does Moonlight pass through, and does the game see them as separate players?
+* [ ] A phone-controller party game of the Jackbox kind, streamed through Moonlight (players join from their phone's browser, so only the video is streamed)
+* [ ] Steam Remote Play Together as the fallback if Moonlight's controller passthrough is awkward
+* [ ] The motion sensors on a real iPhone and a real Android phone over HTTPS (Tailscale name), to see what works before choosing the pointer design
+* [ ] A USB Wi-Fi adapter on the Pi 5: driver support, the Pi's access point and the hotel-style uplink running together, and a long-running stability test
 
 ### Stage 5 – Profiles and continue
 
