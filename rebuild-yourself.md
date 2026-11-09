@@ -233,51 +233,37 @@ Everything else is in [modules/homeassistant/](modules/homeassistant/).
 
 ---
 
-## 9. The voice assistant *(optional; needs the PC's NVIDIA GPU)*
+## 9. The voice assistant *(optional; needs a PC with an NVIDIA GPU)*
 
-Home Assistant listens through your phone, and the PC does the heavy work:
+Home Assistant listens through your phone (or a satellite), and three services do the heavy
+work over the network. They run on the PC, not the Pi, and aren't part of this repository:
 
-- **Whisper** turns speech into text.
-- **F5-TTS** speaks the replies with a female voice ("dora").
-- **llama-server** runs the language model.
+| Service | What | Port | A good choice |
+|---|---|---|---|
+| Speech to text | Turns speech into text | 10300 | [wyoming-faster-whisper](https://github.com/rhasspy/wyoming-faster-whisper), `large-v3-turbo` on CUDA |
+| Language model | Understands and answers | 8080 | [llama.cpp](https://github.com/ggml-org/llama.cpp)'s `llama-server`, OpenAI-compatible, with a model that handles tool calls (Gemma 4 12B works) |
+| Text to speech | Speaks the replies | 10200 | Piper on the Pi, installed in step 6, or a Wyoming voice on the PC (we use [F5-TTS](https://github.com/SWivid/F5-TTS) with a cloned female voice) |
 
-All three start at boot, and only the Pi can reach them. Follow
-[modules/voice/README.md](modules/voice/README.md):
-
-1. **Copy the folders:** on the PC, copy `modules\voice\windows\whisper` and `f5-tts` to
-   `D:\local-ai\`, and the files in `llm\` to `D:\local-ai\`.
-2. **Install Whisper and F5-TTS**, as yourself:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File D:\local-ai\whisper\install.ps1
-   powershell -ExecutionPolicy Bypass -File D:\local-ai\f5-tts\install.ps1
-   ```
-3. **The language model:**
-   - Unzip a Windows CUDA build of [llama.cpp](https://github.com/ggml-org/llama.cpp/releases) into `D:\local-ai\llama.cpp`.
-   - Download the model (`gemma-4-12b`, see `models.ini.example`) into `C:\local-ai\models\llm`.
-   - Copy `models.ini.example` to `D:\local-ai\llama.cpp\models.ini`.
-4. **Start them at boot**, in PowerShell as administrator. Use the Pi's addresses: `hostname -I` and
-   `tailscale ip` on the Pi.
-   ```powershell
-   $pi = '192.168.0.77', '100.x.y.z', 'fd7a:115c:a1e0::xxxx'
-   powershell -ExecutionPolicy Bypass -File D:\local-ai\whisper\setup-admin.ps1 -Allowed $pi
-   powershell -ExecutionPolicy Bypass -File D:\local-ai\f5-tts\setup-admin.ps1 -Allowed $pi
-   powershell -ExecutionPolicy Bypass -File D:\local-ai\setup-llm-service.ps1 -Allowed $pi
-   ```
-5. **Connect them in Home Assistant:**
-   - Add integration → **Wyoming Protocol**, twice: `<pc>` port `10300` (Whisper) and
-     `<pc>` port `10200` (F5-TTS).
-   - Add integration → **llama.cpp**: URL `http://<pc>:8080/v1`, model `gemma-4-12b`.
-6. **Create the assistant:** Settings → Voice assistants → Add assistant, Português (Brasil):
+1. **Run the services on the PC**, each following its own instructions. Start them at boot and
+   let only the Pi reach them (Windows firewall rules for the Pi's addresses: `hostname -I`
+   and `tailscale ip` on the Pi). Wyoming has no password, so don't open them to the whole
+   network.
+2. **Connect them in Home Assistant:**
+   - Add integration → **Wyoming Protocol**: `<pc>` port `10300` (speech to text), and
+     `<pc>` port `10200` if the voice runs on the PC.
+   - Add integration → **llama.cpp**: URL `http://<pc>:8080/v1`, and your model's name.
+3. **Create the assistant:** Settings → Voice assistants → Add assistant, Português (Brasil):
    - speech to text: Whisper;
-   - text to speech: f5-tts, voice `dora`;
+   - text to speech: the PC's voice, or Piper;
    - conversation agent: the llama.cpp one, with **Prefer handling commands locally** on.
 
 **Check:** press the Assist button in the phone app and say "que horas são?". A reply comes
 back in a few seconds. The first reply after the PC starts takes longer, because it loads
 the model.
 
-The next step, PiPA (a personal assistant behind the same voice, and on Telegram), is on
-the roadmap in the [README](README.md).
+**PiPA**, a personal assistant behind the same voice and on Telegram, takes the language
+model's place as the conversation agent. It runs on the Pi; install it from
+[pipa-assistant](https://github.com/Gabrielloufi/pipa-assistant).
 
 ---
 

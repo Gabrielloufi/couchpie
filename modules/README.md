@@ -16,6 +16,9 @@ procedure, in order, is [rebuild-yourself.md](../rebuild-yourself.md).
 | [smb](smb/) | The PC's shared folders, mounted on demand; and the Windows side. | `/etc/systemd/system/`, `/etc/cifs-creds` |
 | [homeassistant](homeassistant/) | Home Assistant in Docker; backups copied to the PC. | `/srv/homeassistant/`, `/etc/docker/`, `/etc/systemd/system/` |
 | [wake](wake/) | Wakes the PC (Wake-on-LAN), and turns the TV on or off, from the remote or from a page on the tailnet. | `~/.local/bin/`, `~/.config/systemd/user/` |
-| [voice](voice/) | The voice assistant's GPU work on the PC: Whisper (hearing), F5-TTS (speaking), llama-server (thinking). Not installed by the bootstrap. | `D:\local-ai\` and `C:\local-ai\` on the PC |
+
+The voice assistant's GPU work on the PC (Whisper, a voice, a language model) and
+[PiPA](https://github.com/Gabrielloufi/pipa-assistant), the personal assistant, live outside this repository; see
+[rebuild-yourself.md](../rebuild-yourself.md#9-the-voice-assistant-optional-needs-a-pc-with-an-nvidia-gpu).
 
 How they fit together is in [docs/en/architecture.md](../docs/en/architecture.md).

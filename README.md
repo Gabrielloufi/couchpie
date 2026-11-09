@@ -19,7 +19,8 @@ The TV interface is in Brazilian Portuguese.
                                ├ Chromium kiosk browsers         ├ shared folders (SMB)
                                ├ Kodi, Moonlight                 ├ Wake-on-LAN
                                ├ wake page                       └ voice: Whisper, F5-TTS,
-                               └ Home Assistant + Piper (Docker)        llama-server
+                               ├ Home Assistant + Piper (Docker)        llama-server
+                               └ PiPA (pipa-assistant)
                                          ║
                                      Tailscale ══ your phone, anywhere
                                                   (wake page, Home Assistant app)
@@ -57,8 +58,8 @@ installs everything on the Pi; the PC's parts are PowerShell scripts in the same
 | Module | Runs on | What it does |
 |---|---|---|
 | [homeassistant](modules/homeassistant/) | Pi | [Home Assistant](https://www.home-assistant.io/) in Docker, next to the TV box, with Piper (local text to speech). Backups are written on the Pi and copied to the PC every hour. HTTPS on the tailnet. |
-| [voice](modules/voice/) | PC | The voice assistant's GPU work, each started at boot before anyone logs in, reachable only from the Pi: Whisper (speech to text), F5-TTS (a cloned female voice), llama-server (the LLM). |
-| [pipa](pipa/) | Pi + PC | *In progress.* PiPA, the Pi Personal Assistant: one voice listener that routes each request to Home Assistant or to a personal agent. [RESULTS.md](pipa/RESULTS.md) has how the voice services were chosen and measured. |
+| Voice services | PC | Not in this repository: the voice assistant's GPU work, reached over the network. Speech to text (Whisper), a language model (llama.cpp's `llama-server`) and, optionally, a voice on the PC (the Pi's Piper is the fallback). See [rebuild-yourself.md](rebuild-yourself.md#9-the-voice-assistant-optional-needs-a-pc-with-an-nvidia-gpu). |
+| [PiPA](https://github.com/Gabrielloufi/pipa-assistant) | Pi | *In progress*, in its own repository: the Pi Personal Assistant, an agent ([nanobot](https://github.com/HKUDS/nanobot)) behind Home Assistant's voice and Telegram. Home Assistant answers simple home commands itself and passes everything else to PiPA. |
 
 ## The TV remote
 
@@ -131,8 +132,8 @@ sudo reboot
 ### Stage 3 – Smart home and voice
 
 * [x] Home Assistant in Docker, backups copied to the PC
-* [x] Local voice services: Whisper, F5-TTS (female pt-BR voice), llama-server, Piper
-* [ ] PiPA: one voice listener routing to Home Assistant or a personal agent ([nanobot](https://github.com/HKUDS/nanobot)), also on Telegram
+* [x] Local voice services: Whisper, F5-TTS (female pt-BR voice), llama-server, Piper (the PC's services live outside this repository)
+* [ ] [PiPA](https://github.com/Gabrielloufi/pipa-assistant): one voice listener routing to Home Assistant or a personal agent ([nanobot](https://github.com/HKUDS/nanobot)), also on Telegram
 * [ ] Devices: BroadLink IR/RF (fans, air conditioner via SmartIR), Midea air conditioner
 * [ ] A 7" touch screen dashboard next to the TV
 * [ ] A voice satellite on the Pi (USB mic and speaker)
@@ -169,5 +170,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 Note: This project does not redistribute Raspberry Pi OS images. Models used by the voice
-services have their own licenses (F5-TTS's pt-br checkpoint is non-commercial); see
-[modules/voice](modules/voice/).
+services have their own licenses (F5-TTS's pt-br checkpoint, for example, is non-commercial).

@@ -51,6 +51,10 @@ Stage 1, running on a Raspberry Pi 5.
 
 ### Changed
 
+- PiPA moved to its own repository, [pipa-assistant](https://github.com/Gabrielloufi/pipa-assistant),
+  and the PC's voice services (Whisper, F5-TTS, the llama-server presets) out of this one.
+  The voice assistant section of `rebuild-yourself.md` now names the services Home Assistant
+  needs and links their own projects.
 - Red and green swapped on the remote: green is now Home (the menu, leaving apps
   open) and red closes the app in front (on a game stream, the game and Steam Big
   Picture).
