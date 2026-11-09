@@ -1,0 +1,39 @@
+couchPie
+https://github.com/Gabrielloufi/couchpie
+
+Copyright 2025 CouchPie Team (Gabriel Loureiro Figueira and contributors)
+
+couchPie is free software: you can redistribute it and/or modify it under the terms of the
+GNU Affero General Public License as published by the Free Software Foundation, either
+version 3 of the License, or (at your option) any later version, with the additional term
+below. See the LICENSE file.
+
+couchPie is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU Affero General Public License for more details.
+
+
+ADDITIONAL TERM UNDER SECTION 7(b) OF THE GNU AFFERO GENERAL PUBLIC LICENSE, VERSION 3
+
+The following author attribution must be preserved in this material and in every copy,
+modified or not, of couchPie or of any work based on it:
+
+    Based on couchPie (https://github.com/Gabrielloufi/couchpie)
+
+Specifically:
+
+1. Keep this NOTICE file, including the attribution above, in the source code of the work.
+
+2. Where the work displays Appropriate Legal Notices (section 5(d) of the license), for
+   example on an "About", "Sobre" or credits screen, include the attribution above in them,
+   in a way that a user of the work can readily see and read.
+
+3. Include the attribution above in the documentation provided with any distribution of the
+   work, including documentation that comes with a device on which the work is installed.
+
+This term does not require the use of the couchPie name or logo for anything else, and does
+not grant any rights to them; see TRADEMARKS.md. A work based on couchPie must not be named
+couchPie.
+
+All other files in this repository are covered by this notice unless they state otherwise.
+Third-party components are listed in THIRD_PARTY.md and keep their own licenses.
