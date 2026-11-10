@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.jpg" alt="couchPie: a pie with sunglasses and a headset playing games on the couch, in front of a TV" width="100%">
+</p>
+
 # couchPie 🛋️🥧
 
 **Smart TV killer. Portable media hub. Pi-powered freedom machine.**

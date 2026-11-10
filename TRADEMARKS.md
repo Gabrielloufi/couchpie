@@ -5,7 +5,7 @@ The code of couchPie is free software under the GNU Affero General Public Licens
 name or logo. This policy says how they may be used, so that "couchPie" always means the
 official project, and people know what they are getting.
 
-The couchPie name and logo belong to the project's maintainer (see
+The couchPie name, logo and mascot (the images in [assets/](assets/)) belong to the project's maintainer (see
 [GOVERNANCE.md](GOVERNANCE.md)).
 
 ## You may, without asking
