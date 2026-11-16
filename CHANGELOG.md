@@ -59,6 +59,10 @@ Stage 1, running on a Raspberry Pi 5.
 
 ### Fixed
 
+- Home Assistant over the tailnet answered "400: Bad Request": since 2026.11 its proxy
+  settings live in Settings → System → Network and must be confirmed within 5 minutes; the
+  ignored `http:` YAML is gone, and the README and rebuild guide give the steps.
+
 - Netflix: the arrows no longer get stuck in the title preview card.
 - Disney+, Globoplay, Prime Video: the arrows reach the tiles and buttons (Chromium's
   spatial navigation couldn't).

@@ -281,7 +281,7 @@ sudo systemctl enable --now ha-backup-sync.timer
 # On the tailnet with HTTPS, next to the wake page on 443
 if command -v tailscale > /dev/null && sudo tailscale serve --bg --https=8443 http://127.0.0.1:8123 > /dev/null; then
     host=$(tailscale status --json | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')
-    NOTES+=("Home Assistant: https://$host:8443/ on the tailnet, or http://$(hostname).local:8123 at home. The first start takes a few minutes; then create your account there.")
+    NOTES+=("Home Assistant: http://$(hostname).local:8123 at home; the first start takes a few minutes. Create your account, then turn on the tailnet address https://$host:8443/ in Settings > System > Network (see modules/homeassistant/README.md).")
 else
     NOTES+=("Home Assistant: http://$(hostname).local:8123 (it isn't on the tailnet with HTTPS: set up Tailscale with HTTPS certificates, then run this again).")
 fi
