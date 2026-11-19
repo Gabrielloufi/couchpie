@@ -7,7 +7,7 @@ moves to a machine of its own. The bootstrap installs Docker and starts it.
 |---|---|---|
 | `compose.yaml` | `/srv/homeassistant/compose.yaml` | The Home Assistant and Piper containers. Piper's voices go in `/srv/homeassistant/piper`. |
 | `configuration.yaml` | `/srv/homeassistant/config/` (fresh installs only) | Home Assistant's default configuration, loading couchPie's package. |
-| `couchpie.yaml` | `/srv/homeassistant/config/packages/` (replaced every run) | History written less often; trusts `tailscale serve` as a proxy. |
+| `couchpie.yaml` | `/srv/homeassistant/config/packages/` (replaced every run) | History written less often. |
 | `daemon.json` | `/etc/docker/daemon.json` | Docker's log limits. |
 | `ha-backup-sync`, `.service`, `.timer` | `/usr/local/bin/`, `/etc/systemd/system/` | Copies backups to the PC every hour. |
 
@@ -15,8 +15,21 @@ Home Assistant is at `http://raspberrypi.local:8123` at home and at
 `https://<pi>.<tailnet>.ts.net:8443/` on the tailnet (`tailscale serve`). The
 wake page keeps port 443.
 
-The first time, open it and create your account (onboarding). Until then, anyone on the
-home network or the tailnet who opens it first would create the owner account.
+The first time, open it at home and create your account (onboarding). Until then, anyone
+on the home network or the tailnet who opens it first would create the owner account.
+
+**The tailnet address needs one setting first**, or every request through it fails with
+"400: Bad Request" and the log says "A request from a reverse proxy was received from
+127.0.0.1, but your HTTP integration is not set-up for reverse proxies". `tailscale serve`
+passes requests on from 127.0.0.1, and Home Assistant must be told to trust it:
+
+1. At home (`http://raspberrypi.local:8123`), open Settings → System → Network.
+2. In the web server's settings, turn on **Use X-Forwarded-For** and add `127.0.0.1` and `::1`
+   as **trusted proxies**. Save; Home Assistant restarts.
+3. **Within 5 minutes**, confirm the new settings on that same page. Since 2026.11, every
+   change to these settings is a trial: if it isn't kept in time, Home Assistant goes back to
+   the previous settings and doesn't try the change again. These settings can't be set in
+   YAML anymore; Home Assistant ignores an `http:` block there.
 
 ## Why Container and not Home Assistant OS
 

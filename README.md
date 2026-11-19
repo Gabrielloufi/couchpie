@@ -149,12 +149,14 @@ sudo reboot
 * [x] The PC on Tailscale before anyone logs in (unattended mode)
 * [ ] Moonlight and the PC's folders over Tailscale when away from home
 * [ ] Travel router mode (access point + hotel Wi-Fi), with captive portal handling; a USB Wi-Fi adapter for the hotel uplink, see [docs/en/wifi-adapter.md](docs/en/wifi-adapter.md) for what to check before buying
+* [ ] A 5G HAT with its own SIM: a mobile connection away from home or when the home internet
+  is down, and a phone number that stays with the Pi (for PiPA on Signal)
 
 ### Stage 3 – Smart home and voice
 
 * [x] Home Assistant in Docker, backups copied to the PC
 * [x] Local voice services: Whisper, F5-TTS (female pt-BR voice), llama-server, Piper (the PC's services live outside this repository)
-* [ ] [PiPA](https://github.com/Gabrielloufi/pipa-assistant): one voice listener routing to Home Assistant or a personal agent ([nanobot](https://github.com/HKUDS/nanobot)), also on Telegram
+* [ ] [PiPA](https://github.com/Gabrielloufi/pipa-assistant): one voice listener routing to Home Assistant or a personal agent ([nanobot](https://github.com/HKUDS/nanobot)), also on Telegram (Signal later, for end-to-end encryption)
 * [ ] Devices: BroadLink IR/RF (fans, air conditioner via SmartIR), Midea air conditioner
 * [ ] A 7" touch screen dashboard next to the TV
 * [ ] A voice satellite on the Pi (USB mic and speaker)

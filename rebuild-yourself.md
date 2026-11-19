@@ -211,21 +211,28 @@ Details and fixes: [docs/en/troubleshooting.md](docs/en/troubleshooting.md).
 
 ## 8. Home Assistant
 
-Open `https://<pi>.<tailnet>.ts.net:8443/` (or `http://<pi>.local:8123` at home) **soon**:
-whoever opens it first creates the owner account.
+Open `http://<pi>.local:8123` at home **soon**: whoever opens it first creates the owner
+account.
 
 1. **Create your account** and go through the setup.
-2. **Backups:** Settings → System → Backups. Turn on automatic backups (daily, keep 3).
+2. **Turn on the tailnet address** (`https://<pi>.<tailnet>.ts.net:8443/`). Until you do, it
+   answers "400: Bad Request".
+   1. Settings → System → Network: turn on **Use X-Forwarded-For** and add `127.0.0.1` and
+      `::1` as trusted proxies.
+   2. Save. Home Assistant restarts.
+   3. **Confirm the change on that page within 5 minutes**, or it's reverted for good. Details
+      in [modules/homeassistant/](modules/homeassistant/).
+3. **Backups:** Settings → System → Backups. Turn on automatic backups (daily, keep 3).
    - **Save the emergency kit somewhere that isn't the Pi.** Backups are encrypted, and its
      key is the only way to restore them.
    - The Pi copies them to `couchpie\homeassistant-backups` on the PC's share every hour, when
      the PC is on.
-3. **Bluetooth:** Settings → Devices & services → Bluetooth → disable it, unless you need it.
+4. **Bluetooth:** Settings → Devices & services → Bluetooth → disable it, unless you need it.
    Home Assistant finds the Pi's adapter by itself, but can't use it from the container.
-4. **Piper** (a male voice for now, which runs on the Pi): Add integration → **Wyoming
+5. **Piper** (a male voice for now, which runs on the Pi): Add integration → **Wyoming
    Protocol**, host `127.0.0.1`, port `10200`.
-5. **The phone:** install the Home Assistant app and sign in at the tailnet address above.
-6. **Never add Home Assistant's HDMI-CEC integration:** the TV remote service owns that
+6. **The phone:** install the Home Assistant app and sign in at the tailnet address above.
+7. **Never add Home Assistant's HDMI-CEC integration:** the TV remote service owns that
    connection.
 
 **Check:** on the Pi, `systemctl list-timers ha-backup-sync` shows the next backup copy.
