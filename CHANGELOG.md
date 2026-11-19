@@ -4,8 +4,18 @@
 
 Stage 1, running on a Raspberry Pi 5.
 
+### Changed
+
+- License: AGPL-3.0-or-later, so that modified versions, including ones offered as a
+  service, stay open.
+
 ### Added
 
+- `NOTICE`: the license notice, with an additional term under section 7(b) of the AGPL:
+  copies and works based on couchPie keep the attribution "Based on couchPie, free and
+  open-source software, available at no cost at https://github.com/Gabrielloufi/couchpie".
+- `CONTRIBUTING.md` with the DCO sign-off rule, checked on every pull request by
+  `.github/workflows/dco.yml`; `GOVERNANCE.md`; `TRADEMARKS.md`; `THIRD_PARTY.md`.
 - `scripts/bootstrap.sh`: installs couchPie on Raspberry Pi OS Bookworm, settings
   from `couchpie.conf`.
 - Pegasus home screen with the "Kiosk TV" theme: made for the TV remote, folders,
@@ -51,6 +61,10 @@ Stage 1, running on a Raspberry Pi 5.
 
 ### Changed
 
+- PiPA moved to its own repository, [pipa-assistant](https://github.com/Gabrielloufi/pipa-assistant),
+  and the PC's voice services (Whisper, F5-TTS, the llama-server presets) out of this one.
+  The voice assistant section of `rebuild-yourself.md` now names the services Home Assistant
+  needs and links their own projects.
 - Red and green swapped on the remote: green is now Home (the menu, leaving apps
   open) and red closes the app in front (on a game stream, the game and Steam Big
   Picture).
