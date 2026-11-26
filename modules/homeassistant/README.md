@@ -1,7 +1,20 @@
 # homeassistant
 
-[Home Assistant](https://www.home-assistant.io/) in Docker, next to couchPie, until it
-moves to a machine of its own. The bootstrap installs Docker and starts it.
+[Home Assistant](https://www.home-assistant.io/) in Docker, on the same Raspberry Pi as couchPie:
+a Home Assistant flavor for people who want both on one Pi, until it moves to a machine of its
+own. It's an optional module.
+- **Today** the bootstrap installs it along with every other module.
+- **Later:** an installer will let you pick the modules (media center, games, Home Assistant,
+  personal assistant).
+
+**What it provides:**
+- Docker, Home Assistant and Piper;
+- backups copied to the PC;
+- history written more gently on the SD card;
+- a touch panel next to the TV.
+
+Your house's devices, dashboards and automations are yours, and belong in a repository of
+your own (see [Your house's own configuration](#your-houses-own-configuration)).
 
 | File | Installed to | Purpose |
 |---|---|---|
@@ -55,7 +68,7 @@ of its own here, or a manual step:
   or later and Bookworm's `docker.io` is older.
 - **16 KB memory pages**, the Pi 5 kernel's default, used to crash Home Assistant (jemalloc,
   fixed with `DISABLE_JEMALLOC`). It has used mimalloc since, and 2026.11 runs as it is.
-- **No `privileged`, no USB, no Bluetooth.** The BroadLink and the Midea AC are on Wi-Fi.
+- **No `privileged`, no USB, no Bluetooth.** Wi-Fi devices, such as an infrared and RF bridge or a Wi-Fi air conditioner, need none of it.
   Home Assistant still finds the Pi's Bluetooth by itself on first start and logs
   permission errors: disable it under Settings → Devices & services → Bluetooth. Using it
   would need `/run/dbus` mounted and the `NET_ADMIN` and `NET_RAW` capabilities; leaving it
@@ -63,238 +76,81 @@ of its own here, or a manual step:
 - **Don't add Home Assistant's HDMI-CEC integration.** `cec-remote` owns the TV connection,
   as with Kodi.
 
-## Devices
+## Your house's own configuration
 
-What each device in the house needs, as we find out. In Jira: HOMEA-2 (Dispositivos); the
-BroadLink work is HOMEA-5.
+This module installs Home Assistant itself. A house's devices, their codes, dashboards,
+automations and scripts are that house's, and are best kept out of this repository:
 
-### BroadLink RM4 Pro (infrared and RF, with the temperature and humidity sensor)
+- **In Home Assistant:** put them in YAML packages in `config/packages/`.
+  - Every file there is loaded.
+  - The bootstrap only replaces `couchpie.yaml`, so give yours any other name.
+  - `configuration.yaml` is installed only on a fresh install, so your own version is safe
+    too.
+- **In git:** keep them in a private repository of your own, with a small script that copies
+  them onto the Pi. Otherwise they exist only on the SD card and in Home Assistant's
+  encrypted backups.
+- **This author's version** is the private `home-assistant-gabe`. It holds:
+  - the devices: a BroadLink RM4 Pro, an RF ceiling fan, and an infrared air conditioner
+    through SmartIR with a code file of its own;
+  - their codes and scripts for voice;
+  - the panel's dashboard;
+  - an `install.sh` that copies the files, runs `check_config` and restarts Home Assistant.
+- **PiPA works the same way:** `pipa-assistant` is public, and `pipa-gabe` holds the private
+  persona and settings.
 
-Bought 2026-11-26 with its temperature and humidity sensor cable (ST2), and on the home Wi-Fi.
-Steps 1 to 3 below were done the same day.
+## A touch panel next to the TV
 
-1. **Unlock it in the BroadLink app.** The app locks new devices against local control, and
-   Home Assistant can only talk to an unlocked one: device → ⋯ → Properties → turn off **Lock
-   device**. The app keeps working.
-2. **Reserve its address in the router** (DHCP reservation), so Home Assistant keeps finding
-   it.
-3. **Add it to Home Assistant:** Settings → Devices & services → Add integration →
-   **Broadlink**, with its IP address. It brings a remote entity (to send and learn codes) and
-   the cable's temperature and humidity sensors.
-4. **Codes learned in the BroadLink app stay in the app.** Home Assistant can't use them, so
-   each button is learned again from Home Assistant (`remote.learn_command`, below).
+A small touch screen on the Pi's second HDMI port can show a Home Assistant dashboard, while
+every app stays on the TV. The module has the two pieces in `painel/`. For now they're
+installed by hand (HOMEA-15):
 
-To find it and check whether it's still locked, from the Pi (a throwaway environment, outside
-Home Assistant):
-
-```bash
-python3 -m venv /tmp/bl && /tmp/bl/bin/pip install -q broadlink
-/tmp/bl/bin/python -c "import broadlink; [print(d.model, d.host[0], 'locked' if d.is_locked else 'unlocked') for d in broadlink.discover(timeout=8)]"
-```
-
-### Ventisol Fênix Inverter ceiling fan (RF remote)
-
-| | |
-|---|---|
-| Fan | Ventisol Ventilador de Teto DC Fênix Inverter LED, bivolt |
-| Remote | model 13930 |
-| Radio | RF 433.95 MHz, ASK modulation |
-| Anatel certificate | 00341-24-16487 |
-
-What this means for Home Assistant:
-
-- **It's radio, not infrared.** It needs the BroadLink RM4 Pro, which learns RF remotes in the
-  315 and 433 MHz bands as well as infrared; the RM4 mini only does infrared. 433.95 MHz falls
-  in the band the RM4 Pro covers, and ASK is the simple amplitude modulation that common
-  433 MHz remotes use.
-- **Learn each button of remote 13930** with the BroadLink integration: Developer tools →
-  Actions → `remote.learn_command` with `command_type: rf`. It first sweeps to find the
-  frequency (hold the button), then records it (press it once). Store the codes under one
-  device name, such as `ventilador_fenix`.
-- **Then make a fan entity** from those codes: a template fan that calls
-  `remote.send_command`, or SmartIR's fan platform with a device file holding them. The voice
-  assistant and PiPA can then say "liga o ventilador na velocidade 3".
-- **Confirmed 2026-11-26:** the RM4 Pro learned remote 13930 in the BroadLink app and the
-  fan obeys, so it sends a fixed code.
-- **Learning it for Home Assistant (2026-11-26).**
-  - Home Assistant's `remote.learn_command` (`command_type: rf`) found the frequency but timed
-    out on the second step every time, even with the button pressed. Once it also stored a
-    code without any button pressed, picked up from some other 433 MHz signal in the house.
-  - What worked: [python-broadlink](https://github.com/mjg59/python-broadlink) on the Pi, at
-    the known frequency (`find_rf_packet(433.95)`, from the Anatel certificate, so no sweep),
-    polling `check_data()` for 30 s while the button is tapped several times.
-  - Every code learned that way worked when sent back.
-- **Only the buttons in use were learned:** speeds 0 (stop) to 6, ▼ (ventilação) and ▲
-  (exaustão).
-  - The power and light buttons are left out, because the light is a smart bulb switched on its
-    own.
-  - So is the ≈ button (it only cycles the speeds) and the timer, replaced by a script.
-- **In Home Assistant** (`config/packages/ventilador.yaml`, the house's own file):
-  - `script.ventilador_enviar` sends a command by name. The codes are inline as `b64:…`
-    strings, so they don't depend on the integration's learned-codes store; a copy of the raw
-    codes is in `config/ventilador-codigos-rf.json`.
-  - `fan.ventilador` is a template fan with 6 speeds, where 0% is the 0 button. Its direction
-    is the mode: forward = ventilação, reverse = exaustão. "On" goes back to the last speed
-    used. Its state lives in helpers (`input_number.ventilador_velocidade`,
-    `input_select.ventilador_sentido`), because RF is one-way.
-  - `script.ventilador_desligar_em` turns it off after a number of minutes. It replaces the
-    remote's 1H/2H/4H with any time, and doesn't survive a Home Assistant restart.
-  - Tested through Home Assistant: 50% gave speed 3, exaustão switched the mode, and off
-    stopped it.
-  - For voice assistants and PiPA, three more scripts:
-    - `script.ventilador_velocidade` (`velocidade` 0–6), so "velocidade 2" needs no
-      percentages;
-    - `script.ventilador_ventilacao` and `script.ventilador_exaustao`, because Assist has no
-      intent for a fan's direction.
-  - These and `script.ventilador_desligar_em` are exposed to Assist.
-  - A speed's percentage rounds to the nearest speed (17% is speed 1).
-
-### Elgin air conditioner (infrared)
-
-Home Assistant's Broadlink integration (2026.11) gives the RM4 Pro these entities: a remote
-(`remote.sala_de_estar_rm4_pro`), the sensors (`sensor.sala_de_estar_rm4_pro_temperatura`,
-`..._umidade`), and, since 2026.5, an `infrared` emitter and a `radio_frequency` transmitter
-for Home Assistant's native infrared platform.
-
-**Why something more is needed.** The emitter can send any code, but Home Assistant doesn't
-know which code means "frio, 23 °C". An air conditioner's remote sends the whole state on every
-press (mode, temperature, fan), so it takes a full set of codes plus something that picks the
-right one and shows a thermostat. The BroadLink app has that set for Elgin (its "Elgin" preset),
-but it stays in the app, out of Home Assistant's reach.
-
-Three ways to get it, cheapest first:
-
-1. **A native infrared integration.** Home Assistant has built-in climate integrations on top of
-   the infrared platform: [Gree Infrared](https://www.home-assistant.io/integrations/gree_infrared/),
-   [LG Infrared](https://www.home-assistant.io/integrations/lg_infrared/), Samsung Infrared. None
-   is for Elgin, but some brands share protocols, so Gree's is worth a try. It installs nothing:
-   Add integration → Gree Infrared → pick the RM4 Pro's emitter.
-2. **SmartIR**, a custom integration with code sets for many models, including two Elgin ones
-   for BroadLink:
-
-   | SmartIR code | Model | Modes | Fan | Temperature |
-   |---|---|---|---|---|
-   | 2800 | HVQI18B2IA | cool, heat | auto only | 16–32 °C |
-   | 2801 | HVQI12B2FB | cool, heat | auto only | 17–30 °C |
-
-   Each code file can be tried before installing anything, by sending one of its codes through
-   the RM4 Pro. If one works, SmartIR makes it a thermostat:
+1. **A dashboard that fits the screen.** The sections view with two columns fits 1024×768.
+   Don't make it admin-only.
+2. **A user for the panel** that isn't an admin, with "Can only log in from the local network"
+   on.
+3. **Automatic login for that user, from the Pi only,** in `configuration.yaml`:
 
    ```yaml
-   climate:
-     - platform: smartir
-       name: Ar-condicionado
-       unique_id: ar_condicionado
-       device_code: 2801
-       controller_data: remote.sala_de_estar_rm4_pro
-       temperature_sensor: sensor.sala_de_estar_rm4_pro_temperatura
-       humidity_sensor: sensor.sala_de_estar_rm4_pro_umidade
+   homeassistant:
+     auth_providers:
+       - type: trusted_networks
+         trusted_networks:
+           - <the Pi's LAN address>/32
+         trusted_users:
+           <the Pi's LAN address>/32: <the panel user's ID>
+         allow_bypass_login: true
+       - type: homeassistant
    ```
-3. **Learn a few buttons** with `remote.learn_command` (off, cool at 22, 24 and 26…), and make
-   them scripts. No third-party code, but no thermostat either: only the presets that were
-   learned.
 
-Whichever works, the RM4 Pro's sensor reports the room's temperature, so the voice can answer
-"está quente na sala?" as well.
-
-**Result, 2026-11-26.**
-
-- **Gree Infrared:** no reaction.
-- **SmartIR code 2801:** no reaction.
-- **SmartIR code 2800** (made for the Elgin HVQI18B2IA) works on this unit: cool at 24 °C,
-  cool at 22 °C and off all worked when sent straight through the RM4 Pro. Heat isn't tested
-  yet.
-
-What's installed:
-
-- **SmartIR 1.18.2,** copied from its GitHub release into `config/custom_components/smartir`.
-- **The tested code file,** placed at `custom_components/smartir/codes/climate/2800.json`.
-  Otherwise SmartIR downloads it from GitHub on first use.
-- **The climate,** in `config/packages/casa.yaml`: the house's own devices, kept out of this
-  repository and out of the bootstrap's reach, with update checks off. It creates
-  `climate.ar_condicionado`.
-- **Things to keep in mind:**
-  - Infrared is one-way: the thermostat shows the last state it sent, not the unit's real
-    state, so a change made with the physical remote isn't seen.
-  - Home Assistant warns that SmartIR uses temperature properties deprecated in 2027.11; a
-    SmartIR update before then should fix it.
-**Cool only, fan high (2026-11-26).**
-- Both of the house's air conditioners only ever cool. The climate therefore uses a local code
-  file, `codes/climate/9001.json`: SmartIR's 2800 without heat, which also makes Assist's
-  "turn on" cool.
-- An automation in `casa.yaml` turns the unit on in cool when its temperature changes while
-  it's off. A new temperature always means cool at that temperature, so Assist's "set
-  temperature" and the thermostat card just work.
-
-**The infrared protocol.** Code 2800's "auto" fan ran at the lowest speed, and the code file
-had no other. Decoding the codes showed the **Electra** protocol (as in IRremoteESP8266): a
-13-byte frame starting with `0xC3`.
-
-| Byte | Meaning |
-|---|---|
-| 1 | temperature: `((°C - 8) << 3) \| 7` |
-| 4 | fan, bits 5–7: `0x20` high, `0x60` low (SmartIR's "auto"); medium is probably `0x40` and auto `0xa0` |
-| 6 | mode: `0x20` cool |
-| 9 | `0x20` on, `0x00` off (off frames also have `0x05` in byte 11) |
-| 12 | checksum: the sum of bytes 0–11, modulo 256 |
-
-- **Generating codes.** Cool with the fan high, for every temperature from 16 to 32 °C, was
-  generated from one real capture of the remote. Only the data bits' spaces change, so the
-  timing stays the remote's own.
-- **Checks:** the generated codes match the captured ones at 29–32 °C, and a generated 23 °C
-  cooled at full fan.
-- **The fan speeds in Home Assistant:** `high` (the default) and `low`.
-- **Where the tool lives:** the generator and the captures are in `config/ir-elgin/`, for
-  other speeds later.
-- **Remote display:** the remote's display goes out of sync whenever the unit gets an order
-  that didn't come from it. That's normal for infrared.
-
-- **For voice assistants and PiPA,** two scripts in `casa.yaml`, exposed to Assist:
-  - `script.ar_condicionado_ligar` (`temperatura` 16–32; always cool) and
-    `script.ar_condicionado_desligar`.
-  - Why: Assist's "set temperature" only changes the target, and with the unit off SmartIR
-    sends nothing.
-  - Assist's "turn on" restores SmartIR's last mode, or its first one (heat) when it has none.
-  - The script sets the mode and the temperature in one call (`climate.set_temperature` with
-    `hvac_mode`).
-
-## The touch panel next to the TV (HOMEA-7)
-
-A small touch screen on the Pi's second HDMI port shows a Home Assistant dashboard: the room's
-temperature and humidity, the air conditioner's thermostat, and the fan with a grid of
-buttons like its remote. Set up 2026-11-26.
-
-- **The dashboard** "Painel" (`/painel-casa`, storage mode, not admin-only) uses the sections
-  view in two columns, which is what fits 1024×768.
-  - Left: the thermostat card, with the fan-mode feature, and an off button.
-  - Right: temperature and humidity tiles; the fan's tile with its speed feature; buttons for
-    `script.ventilador_velocidade` 0–6; ventilação, exaustão, and "desligar em 30 min".
-  - Below, on scroll: a 24-hour history graph.
-- **The user** "Painel" is not an admin and logs in from the local network only.
-  - Home Assistant logs it in by itself through a `trusted_networks` auth provider for the
-    Pi's own address only (`/32`), with `allow_bypass_login`. Everyone else, on the home
-    network or the tailnet, still gets the password login.
-  - The provider must come **first** in `auth_providers`, or the login page still shows.
-  - The panel must open the Pi's LAN address, not `localhost`: `tailscale serve` proxies from
-    127.0.0.1, which stays untrusted.
-- **The browser:** `~/.local/bin/painel-ha` starts Chromium in kiosk mode with its own profile
-  (`~/.local/share/painel-ha`). It runs under Xwayland (`DISPLAY=:0`), like the kiosk's
-  browsers.
-- **Placing it.** labwc's window rules in `~/.config/labwc/rc.xml` (2026-11-26):
-  - **Every window → the TV** (`identifier="*"`, `MoveToOutput` HDMI-A-2): Pegasus, Kodi,
-    Moonlight, the kiosk's browsers, the remote's keyboard. That holds with the TV in standby,
-    because its output stays connected.
-  - **Then the panel → the touch screen** (`identifier="painel-ha"`, HDMI-A-1). All matching
-    rules apply in order, so this one must come after the catch-all.
-  - The panel's Chromium is started with `--class=painel-ha`. Its usual `chromium (<profile>)`
-    name arrives only after the window opens, too late for a window rule.
-  - labwc's autostart starts the panel.
-  - A TV that is unplugged, not just in standby, removes its output. Windows would then land
-    on the touch screen, unless the kernel forces the connector on (`video=HDMI-A-2:D`).
-- **The touchscreen's input** has to be mapped to the same output: the `<touch ...
-  mapToOutput=...>` line in labwc's `rc.xml`.
-- **Hiding the sidebar:** the browser keeps "always hide the sidebar"
-  (`localStorage.dockedSidebar = "always_hidden"`). It was set once in the panel's profile.
+   - **Order matters:** the trusted provider must come first, or the login page still shows.
+   - **Only the Pi is trusted:** it is the only address (`/32`). Everyone else, on the home
+     network or the tailnet, still gets the password login.
+   - **Use the LAN address:** the panel must open the Pi's LAN address, not `localhost`.
+     `tailscale serve` proxies from 127.0.0.1, which stays untrusted.
+4. **The browser.** Copy `painel/painel-ha` to `~/.local/bin/`, and add
+   `$HOME/.local/bin/painel-ha &` (with the path written out) to `~/.config/labwc/autostart`.
+   - It starts Chromium in kiosk mode, with its own profile (`~/.local/share/painel-ha`) and
+     the window class `painel-ha`.
+   - It runs under Xwayland (`DISPLAY=:0`), like the kiosk's browsers.
+   - `PAINEL_URL` picks the dashboard. The default is `http://<the Pi's LAN
+     address>:8123/painel-casa/sala`.
+5. **The window rules.** Add `painel/labwc-windowrules.xml` to `~/.config/labwc/rc.xml` and
+   reload labwc (`kill -HUP` its process). `wlr-randr` lists your outputs.
+   - **Every window goes to the TV** (`identifier="*"`, `MoveToOutput` HDMI-A-2): Pegasus,
+     Kodi, Moonlight, the kiosk's browsers, the remote's keyboard. That holds with the TV in
+     standby, because its output stays connected.
+   - **Then the panel goes to the touch screen** (`identifier="painel-ha"`, HDMI-A-1). All
+     matching rules apply in order, so this one must come after the catch-all.
+   - **Why the class:** the panel's Chromium is started with `--class=painel-ha`. Its usual
+     `chromium (<profile>)` name arrives only after the window opens, too late for a window
+     rule.
+   - **An unplugged TV** (not just in standby) removes its output. Windows would then land on
+     the touch screen, unless the kernel forces the connector on (`video=HDMI-A-2:D`).
+6. **The touch input** goes to the same output: a line like `<touch
+   deviceName="<your touchscreen>" mapToOutput="HDMI-A-1" mouseEmulation="yes" />` in
+   `rc.xml`. Otherwise touches land on the TV's output.
+7. **Hide the sidebar** once, in the panel's own browser: the user's profile → "Always hide
+   the sidebar". The setting is kept in that browser's profile.
 
 ## Piper: the voice
 

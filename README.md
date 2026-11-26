@@ -73,7 +73,7 @@ installs everything on the Pi; the PC's parts are PowerShell scripts in the same
 
 | Module | Runs on | What it does |
 |---|---|---|
-| [homeassistant](modules/homeassistant/) | Pi | [Home Assistant](https://www.home-assistant.io/) in Docker, next to the TV box, with Piper (local text to speech). Backups are written on the Pi and copied to the PC every hour. HTTPS on the tailnet. |
+| [homeassistant](modules/homeassistant/) | Pi | Optional: a [Home Assistant](https://www.home-assistant.io/) flavor for the same Pi, in Docker, with Piper (local text to speech) and a touch panel next to the TV. Backups are written on the Pi and copied to the PC every hour. HTTPS on the tailnet. Your house's own devices and dashboards go in a repository of your own. |
 | Voice services | PC | Not in this repository: the voice assistant's GPU work, reached over the network. Speech to text (Whisper), a language model (llama.cpp's `llama-server`) and, optionally, a voice on the PC (the Pi's Piper is the fallback). See [rebuild-yourself.md](rebuild-yourself.md#9-the-voice-assistant-optional-needs-a-pc-with-an-nvidia-gpu). |
 | [PiPA](https://github.com/Gabrielloufi/pipa-assistant) | Pi | *In progress*, in its own repository: the Pi Personal Assistant, an agent ([nanobot](https://github.com/HKUDS/nanobot)) behind Home Assistant's voice and Telegram. Home Assistant answers simple home commands itself and passes everything else to PiPA. |
 
@@ -157,8 +157,8 @@ sudo reboot
 * [x] Home Assistant in Docker, backups copied to the PC
 * [x] Local voice services: Whisper, F5-TTS (female pt-BR voice), llama-server, Piper (the PC's services live outside this repository)
 * [ ] [PiPA](https://github.com/Gabrielloufi/pipa-assistant): one voice listener routing to Home Assistant or a personal agent ([nanobot](https://github.com/HKUDS/nanobot)), also on Telegram (Signal later, for end-to-end encryption)
-* [ ] Devices: BroadLink IR/RF (fans, air conditioner via SmartIR), Midea air conditioner
-* [ ] A 7" touch screen dashboard next to the TV
+* [x] Infrared and RF devices through a BroadLink bridge (a ceiling fan, an air conditioner with SmartIR), kept in the house's own repository
+* [x] A 7" touch screen dashboard next to the TV, with every app kept on the TV
 * [ ] A voice satellite on the Pi (USB mic and speaker)
 * [ ] Alexa through Home Assistant
 * [ ] Pi-hole or AdGuard Home on the Pi: ad and tracker blocking for the whole home network, and in travel router mode. It blocks ordinary web ads and trackers, not the streaming services' own ads (often stitched into the video); a fallback keeps DNS working when the Pi is down
@@ -226,6 +226,7 @@ Experiments to run first, to find out what is possible before building on it:
 
 * [ ] Easy retro games: RetroArch emulators behind a Pegasus "Jogos" folder, shipped with free and homebrew games (you add your own game files), playable with phones or Bluetooth gamepads (8BitDo)
 * [ ] Home Assistant on a machine of its own
+* [ ] A modular installer: choose which modules go on the Pi (media center, games, Home Assistant, personal assistant), each person's own settings in a repository of their own
 * [ ] An image builder: a ready-to-boot SD card
 
 ## 🌐 Language
