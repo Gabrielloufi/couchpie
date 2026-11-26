@@ -1,0 +1,15 @@
+<!-- Window rules for ~/.config/labwc/rc.xml, inside <openbox_config>: every window opens on
+     the TV, except the Home Assistant panel, which opens on the small touch screen.
+     All matching rules apply, in order, so the panel's comes last. Rename the outputs to
+     yours (wlr-randr lists them). The TV's output stays connected while the TV is in
+     standby; an unplugged TV drops it, unless the kernel forces it on (video=HDMI-A-2:D).
+     The touchscreen's input also needs mapping to the panel's output:
+     <touch deviceName="..." mapToOutput="HDMI-A-1" mouseEmulation="yes" /> -->
+<windowRules>
+  <windowRule identifier="*">
+    <action name="MoveToOutput" output="HDMI-A-2" />
+  </windowRule>
+  <windowRule identifier="painel-ha">
+    <action name="MoveToOutput" output="HDMI-A-1" />
+  </windowRule>
+</windowRules>
