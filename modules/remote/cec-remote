@@ -14,6 +14,7 @@ Socket protocol, one JSON object per line:
                      {"pointer": [dx, dy]}      move the phone pointer (a virtual mouse)
                      {"click": "left"|"right"}  click it
                      {"scroll": n}              scroll it (positive = up)
+                     {"keyboard_hide": true}    close the on-screen keyboard if it is open
   service -> client  {"key": "up"}              remote button, while the keyboard is open
                      {"toggle": true}           open/close the keyboard
                      {"home": true}             home or close button; the keyboard closes
@@ -362,6 +363,8 @@ class Keys:
                 self.cec.tv(msg["tv"])
             if "pointer" in msg or "click" in msg or "scroll" in msg:
                 self.pointer(msg)
+            if msg.get("keyboard_hide"):  # the keyboard only acts on "home" while it is open
+                self.send({"home": True})
         return True
 
 

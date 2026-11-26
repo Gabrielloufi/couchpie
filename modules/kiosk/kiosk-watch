@@ -18,6 +18,7 @@ can be switched to even when that screen isn't showing.
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -164,7 +165,25 @@ def best_match(title, results):
     return (best[2], best[3]) if best and best[0] >= 0.5 else None
 
 
+def hide_keyboard(page):
+    """The search page focuses its search box, which opens couchPie's on-screen keyboard:
+    take the focus away and ask cec-remote to close the keyboard (only if it is open)."""
+    page.js("document.activeElement && document.activeElement.blur()")
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as remote:
+            remote.settimeout(2)
+            remote.connect("/run/cec-remote.sock")
+            remote.sendall(b'{"keyboard_hide": true}\n')
+    except OSError:
+        pass
+
+
 def watch_netflix(title, profile, dry_run=False):
+    known = known_profiles()
+    if not profile and known:  # ask first: don't touch the TV until we know whose profile
+        names = sorted(known)
+        return {"ok": False, "needs_profile": True, "profiles": names,
+                "error": "which Netflix profile? " + ", ".join(names)}
     page = open_netflix()
     page.go("https://www.netflix.com/browse")
     time.sleep(3)
@@ -182,6 +201,7 @@ def watch_netflix(title, profile, dry_run=False):
     wait(lambda: page.js("location.href") == search and page.js("document.readyState") == "complete", 15)
     time.sleep(2)
     results = wait(lambda: page.js(RESULTS_JS), 10, 1) or []
+    hide_keyboard(page)
     match = best_match(title, results)
     if not match:
         seen = list(dict.fromkeys(name for _, name in results))[:8]
@@ -194,6 +214,7 @@ def watch_netflix(title, profile, dry_run=False):
         result["dry_run"] = True
         return result
     page.go(url)
+    hide_keyboard(page)
     if not wait(lambda: page.js("!!document.querySelector('video')"), 25, 1):
         result.update(ok=False, error="the player didn't start (Netflix may be asking something on screen)")
     return result
