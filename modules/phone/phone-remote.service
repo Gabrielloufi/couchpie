@@ -1,0 +1,10 @@
+[Unit]
+Description=The phone as the TV's remote: a page on port 8096 for the home network, the Pi's Wi-Fi and the tailnet
+
+[Service]
+ExecStart=%h/.local/bin/phone-remote
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -11,6 +11,9 @@ Socket protocol, one JSON object per line:
   client -> service  {"keyboard": true|false}   on-screen keyboard opened/closed
                      {"button": "up"}           act as if a remote button was pressed
                      {"tv": "on"|"standby"}     turn the TV on to our input, or off
+                     {"pointer": [dx, dy]}      move the phone pointer (a virtual mouse)
+                     {"click": "left"|"right"}  click it
+                     {"scroll": n}              scroll it (positive = up)
   service -> client  {"key": "up"}              remote button, while the keyboard is open
                      {"toggle": true}           open/close the keyboard
                      {"home": true}             home or close button; the keyboard closes
@@ -253,6 +256,9 @@ class Keys:
         codes = (set(remote.capabilities().get(e.EV_KEY, []))
                  | set(BUTTON_KEYS.values()) | set(KEY_REMAP.values()))
         self.uinput = evdev.UInput({e.EV_KEY: sorted(codes)}, name="TV remote")
+        # A mouse for the phone (modules/phone): pointing at the TV with the phone's gyroscope.
+        self.mouse = evdev.UInput({e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL],
+                                   e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT]}, name="Phone pointer")
         self.cec = cec
         self.held = {}     # remote key -> key we pressed for it
         self.clients = {}  # socket -> {"buf": bytes, "keyboard": bool}
@@ -290,6 +296,23 @@ class Keys:
             self.send({"key": name})
         elif name in BUTTON_KEYS:
             self.tap(BUTTON_KEYS[name])
+
+    def pointer(self, msg):
+        """Move, click or scroll the phone's virtual mouse."""
+        try:
+            if "pointer" in msg:
+                dx, dy = (max(-500, min(500, int(v))) for v in msg["pointer"])
+                if dx: self.mouse.write(e.EV_REL, e.REL_X, dx)
+                if dy: self.mouse.write(e.EV_REL, e.REL_Y, dy)
+            if "scroll" in msg:
+                self.mouse.write(e.EV_REL, e.REL_WHEEL, max(-10, min(10, int(msg["scroll"]))))
+            if msg.get("click") in ("left", "right"):
+                button = e.BTN_LEFT if msg["click"] == "left" else e.BTN_RIGHT
+                self.mouse.write(e.EV_KEY, button, 1); self.mouse.syn()
+                self.mouse.write(e.EV_KEY, button, 0)
+            self.mouse.syn()
+        except (TypeError, ValueError):
+            pass
 
     def tap(self, code):
         self.press(code, 1)
@@ -337,6 +360,8 @@ class Keys:
             if "tv" in msg:
                 log.info("TV %s, asked by a client", msg["tv"])
                 self.cec.tv(msg["tv"])
+            if "pointer" in msg or "click" in msg or "scroll" in msg:
+                self.pointer(msg)
         return True
 
 

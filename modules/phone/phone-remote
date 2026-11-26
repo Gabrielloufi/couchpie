@@ -1,0 +1,418 @@
+#!/usr/bin/python3 -I
+"""The phone as the TV's remote: a page with the remote's buttons, the home screen's apps, and
+the TV's power. Phones on the Pi's own Wi-Fi, the home network or the tailnet open
+http://<pi>:8096/.
+
+  GET  /                   the page
+  GET  /apps               the home screen's apps: [{"id", "name", "logo"}]
+  GET  /logo/<file>        an app's logo, from the menu's media folder
+  POST /button/<name>      up, down, left, right, ok, back, home, close or keyboard: the same
+                           as the TV remote's button (through cec-remote's socket)
+  POST /tv/on, /tv/standby turn the TV on to the Pi's input, or off (kiosk wake / standby)
+  POST /app/<id>           open an app on the TV (kiosk run <id>)
+  GET  /ws                 WebSocket for the pointer: {"m": [dx, dy]}, {"c": "left"|"right"},
+                           {"s": n}, passed on to cec-remote's virtual mouse
+
+The pointer uses the phone's gyroscope, which browsers only allow on HTTPS pages: open it
+through `tailscale serve` (https://<pi>.<tailnet>.ts.net:8446/).
+
+It answers only private addresses (the Pi's access point, the home network, the tailnet),
+never the internet. Settings, all optional:
+  PHONE_REMOTE_PORT        8096
+  PHONE_REMOTE_HOME_URL    the "Casa" button's link; default: Home Assistant on the same host,
+                           port 8123
+"""
+
+import base64
+import hashlib
+import ipaddress
+import json
+import os
+import re
+import socket
+import subprocess
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+PORT = int(os.environ.get("PHONE_REMOTE_PORT", "8096"))
+HOME_URL = os.environ.get("PHONE_REMOTE_HOME_URL", "")
+KIOSK = Path.home() / ".local/bin/kiosk"
+MENU = Path.home() / ".config/kiosk/menu"
+CEC_SOCKET = "/run/cec-remote.sock"
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+BUTTONS = {"up", "down", "left", "right", "ok", "back", "home", "close", "keyboard"}
+TAILNET = ipaddress.ip_network("100.64.0.0/10")
+# The HTTPS address the page points to for the gyroscope (tailscale serve on port 8446).
+TAILNET_HOST = os.environ.get("PHONE_REMOTE_TAILNET_HOST", "")
+if not TAILNET_HOST:
+    try:
+        status = json.loads(subprocess.run(["tailscale", "status", "--json"], capture_output=True,
+                                           text=True, timeout=5).stdout or "{}")
+        TAILNET_HOST = status.get("Self", {}).get("DNSName", "").rstrip(".")
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        pass
+# Home screen tiles the phone doesn't offer: a stray tap shouldn't restart the Pi, and the TV's
+# power has its own buttons. The streaming services come first.
+LEFT_OUT = {"reboot", "standby"}
+FIRST = ["netflix", "youtube", "primevideo", "disney", "hbomax", "globoplay", "paramount", "kodi"]
+
+
+def menu_apps():
+    """The apps on the home screen, read from Pegasus's metadata files, in menu order."""
+    apps = []
+    for meta in sorted(MENU.rglob("metadata*.txt")):
+        entry = {}
+        for line in meta.read_text(errors="replace").splitlines() + ["game:"]:
+            key, _, value = line.partition(":")
+            key, value = key.strip(), value.strip()
+            if key == "game":
+                launch = re.search(r"kiosk run ([\w-]+)", entry.get("launch", ""))
+                if launch:
+                    logo = entry.get("assets.boxFront", "")
+                    apps.append({"id": launch.group(1), "name": entry["game"],
+                                 "logo": Path(logo).name if logo else "", "dir": str(meta.parent),
+                                 "order": entry.get("sort-by", "")})
+                entry = {"game": value}
+            elif key and entry:
+                entry[key] = value
+    seen, unique = set(), []
+    for app in apps:
+        if app["id"] not in seen and app["id"] not in LEFT_OUT:
+            seen.add(app["id"]); unique.append(app)
+    first = {app_id: n for n, app_id in enumerate(FIRST)}
+    return sorted(unique, key=lambda a: first.get(a["id"], len(first)))
+
+
+def find_logo(name):
+    for path in MENU.rglob(name):
+        if path.is_file() and path.suffix.lower() in (".png", ".jpg", ".jpeg", ".svg", ".webp"):
+            return path
+    return None
+
+
+def cec(message):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(2)
+        sock.connect(CEC_SOCKET)
+        sock.sendall((json.dumps(message) + "\n").encode())
+
+
+PAGE = """<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="theme-color" content="#1e1e22">
+<title>Controle couchPie</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f2f2f5; --card: #fff; --text: #1e1e22; --muted: #6b6b75;
+          --key: #e4e4ea; --ok: #2a475e; --okt: #fff; --red: #c0392b; --green: #1f9d55; --blue: #2c6fbb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1e1e22; --card: #2b2b31; --text: #f2f2f5; --muted: #a0a0aa; --key: #3a3a42; --ok: #3d6a8c; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px system-ui, sans-serif;
+         user-select: none; -webkit-user-select: none; }
+  main { max-width: 440px; margin: 0 auto; padding: 16px; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  h1 { font-size: 20px; margin: 0; }
+  .power { display: flex; gap: 8px; }
+  button { font: inherit; color: var(--text); background: var(--key); border: 0; border-radius: 14px;
+           padding: 12px; touch-action: manipulation; }
+  button:active { filter: brightness(0.85); transform: scale(0.97); }
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 8px 0 16px; }
+  .pad button { height: 78px; font-size: 28px; }
+  .pad .ok { background: var(--ok); color: var(--okt); font-size: 20px; font-weight: 600; border-radius: 50%; }
+  .row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+  .row button { height: 60px; font-size: 14px; }
+  .home { background: var(--green); color: #fff; } .close { background: var(--red); color: #fff; }
+  .kbd { background: var(--blue); color: #fff; }
+  h2 { font-size: 15px; color: var(--muted); font-weight: 500; margin: 4px 0 8px; }
+  .apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .apps button { padding: 6px; height: 86px; display: flex; flex-direction: column; align-items: center;
+                 justify-content: center; gap: 4px; font-size: 12px; background: var(--card); }
+  .apps img { max-width: 100%; max-height: 52px; border-radius: 8px; object-fit: contain; }
+  a.casa { display: block; text-align: center; margin-top: 18px; padding: 14px; border-radius: 14px;
+           background: var(--card); color: var(--text); text-decoration: none; font-weight: 600; }
+  .wide { width: 100%; height: 56px; margin-bottom: 10px; }
+  .hint { color: var(--muted); font-size: 13px; display: block; margin: 6px 0; }
+  .hint input[type=range] { width: 60%; vertical-align: middle; }
+  #pad { height: 170px; border-radius: 18px; background: var(--ok); color: var(--okt); display: flex;
+         flex-direction: column; align-items: center; justify-content: center; text-align: center;
+         margin-bottom: 10px; touch-action: none; font-weight: 600; }
+  #pad.active { filter: brightness(1.25); }
+  #status { min-height: 20px; color: var(--muted); font-size: 13px; text-align: center; margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>couchPie</h1>
+    <div class="power">
+      <button data-post="/tv/on" title="Ligar a TV">TV ⏻</button>
+      <button data-post="/tv/standby" title="Desligar a TV">TV ⏾</button>
+    </div>
+  </header>
+  <div class="pad">
+    <span></span><button data-button="up" data-repeat>▲</button><span></span>
+    <button data-button="left" data-repeat>◀</button>
+    <button class="ok" data-button="ok">OK</button>
+    <button data-button="right" data-repeat>▶</button>
+    <span></span><button data-button="down" data-repeat>▼</button><span></span>
+  </div>
+  <div class="row">
+    <button data-button="back">↩ Voltar</button>
+    <button class="home" data-button="home">Início</button>
+    <button class="close" data-button="close">Fechar</button>
+    <button class="kbd" data-button="keyboard">Teclado</button>
+  </div>
+  <h2>Apontar</h2>
+  <div id="pointer-off"><button id="pointer-start" class="wide">🎯 Apontar com o celular</button>
+    <p class="hint" id="pointer-hint"></p></div>
+  <div id="pointer-on" hidden>
+    <div id="pad">Segure aqui e aponte o celular para a TV<br><small>toque rápido = clique</small></div>
+    <div class="row">
+      <button id="click-l">Clique</button><button id="click-r">Direito</button>
+      <button id="scroll-u">Rolar ▲</button><button id="scroll-d">Rolar ▼</button>
+    </div>
+    <label class="hint">Sensibilidade <input type="range" id="gain" min="5" max="60" value="22"></label>
+    <button id="calibrate" class="wide">Calibrar o movimento</button>
+  </div>
+  <h2>Abrir na TV</h2>
+  <div class="apps" id="apps"></div>
+  <a class="casa" id="casa" href="#">🏠 Casa: luzes, ares e ventiladores</a>
+  <div id="status"></div>
+</main>
+<script>
+const status = document.getElementById("status");
+const say = (text) => { status.textContent = text; clearTimeout(say.t); say.t = setTimeout(() => status.textContent = "", 2500); };
+async function post(path) {
+  if (navigator.vibrate) navigator.vibrate(15);
+  try {
+    const r = await fetch(path, {method: "POST"});
+    if (!r.ok) say("Não deu: " + (await r.text()));
+  } catch (e) { say("Sem conexão com o couchPie"); }
+}
+document.querySelectorAll("[data-post]").forEach(b => b.addEventListener("click", () => post(b.dataset.post)));
+document.querySelectorAll("[data-button]").forEach(b => {
+  const go = () => post("/button/" + b.dataset.button);
+  if (!("repeat" in b.dataset)) { b.addEventListener("click", go); return; }
+  let timer;  // arrows repeat while held
+  const stop = () => { clearInterval(timer); timer = null; };
+  b.addEventListener("pointerdown", e => { e.preventDefault(); go(); stop(); timer = setTimeout(() => { timer = setInterval(go, 150); }, 450); });
+  ["pointerup", "pointerleave", "pointercancel"].forEach(ev => b.addEventListener(ev, stop));
+});
+fetch("/apps").then(r => r.json()).then(apps => {
+  const box = document.getElementById("apps");
+  for (const app of apps) {
+    const b = document.createElement("button");
+    if (app.logo) { const img = document.createElement("img"); img.src = "/logo/" + encodeURIComponent(app.logo); img.alt = ""; b.append(img); }
+    b.append(app.name);
+    b.addEventListener("click", () => { post("/app/" + app.id); say("Abrindo " + app.name + "…"); });
+    box.append(b);
+  }
+});
+// The pointer: the gyroscope's rotation rate while the pad is held, over a WebSocket.
+const $ = id => document.getElementById(id);
+let ws, holding = false, acc = [0, 0], downAt = 0, moved = 0;
+function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+function openSocket() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onclose = () => { if (!$("pointer-on").hidden) setTimeout(openSocket, 1000); };
+}
+// Which rotation axis is horizontal and which vertical depends on how the phone is held and on
+// the browser, so a two-step calibration measures it: turn right, then tilt up.
+const AXES = ["alpha", "beta", "gamma"];
+let cal = null;
+try { cal = JSON.parse(localStorage.getItem("pointer-cal")); } catch (e) {}
+cal = cal || {h: "alpha", hs: -1, v: "beta", vs: -1};
+let calStep = 0, sums = {alpha: 0, beta: 0, gamma: 0}, smooth = [0, 0];
+const DEAD = 2.5;  // deg/s below which the hand's tremor is ignored
+function onMotion(ev) {
+  const r = ev.rotationRate; if (!holding || !r) return;
+  const dt = (ev.interval > 1 ? ev.interval / 1000 : ev.interval) || 0.016;
+  if (calStep) { for (const a of AXES) sums[a] += (r[a] || 0) * dt; return; }
+  const k = +$("gain").value;
+  let h = (r[cal.h] || 0) * cal.hs, v = (r[cal.v] || 0) * cal.vs;
+  h = Math.abs(h) < DEAD ? 0 : h; v = Math.abs(v) < DEAD ? 0 : v;
+  smooth[0] = 0.6 * smooth[0] + 0.4 * h; smooth[1] = 0.6 * smooth[1] + 0.4 * v;  // low-pass
+  acc[0] += smooth[0] * dt * k; acc[1] += smooth[1] * dt * k;
+}
+function calibrationDone() {  // called when the pad is released during calibration
+  const best = (exclude) => AXES.filter(a => a !== exclude)
+    .reduce((x, y) => Math.abs(sums[x]) >= Math.abs(sums[y]) ? x : y);
+  if (calStep === 1) {
+    const ax = best(null); cal.h = ax; cal.hs = sums[ax] >= 0 ? 1 : -1;   // right = +x
+    calStep = 2; sums = {alpha: 0, beta: 0, gamma: 0};
+    pad.innerHTML = "Passo 2: segure aqui e incline o celular para CIMA, depois solte";
+  } else {
+    const ax = best(cal.h); cal.v = ax; cal.vs = sums[ax] >= 0 ? -1 : 1;  // up = -y
+    calStep = 0;
+    try { localStorage.setItem("pointer-cal", JSON.stringify(cal)); } catch (e) {}
+    pad.innerHTML = "Segure aqui e aponte o celular para a TV<br><small>toque rápido = clique</small>";
+    say("Calibrado: horizontal = " + cal.h + ", vertical = " + cal.v);
+  }
+}
+function flush() {
+  const dx = Math.trunc(acc[0]), dy = Math.trunc(acc[1]);
+  if (dx || dy) { send({m: [dx, dy]}); acc[0] -= dx; acc[1] -= dy; moved += Math.abs(dx) + Math.abs(dy); }
+  requestAnimationFrame(flush);
+}
+$("pointer-start").addEventListener("click", async () => {
+  if (!window.isSecureContext) {
+    $("pointer-hint").innerHTML = 'O giroscópio só funciona em HTTPS. Abra pela tailnet: <a href="https://' +
+      "__TAILNET_HOST__" + ':8446/">https://__TAILNET_HOST__:8446</a>';
+    return;
+  }
+  if (typeof DeviceMotionEvent !== "undefined" && DeviceMotionEvent.requestPermission) {
+    try { if (await DeviceMotionEvent.requestPermission() !== "granted") { $("pointer-hint").textContent = "Sem permissão para o movimento."; return; } }
+    catch (e) { $("pointer-hint").textContent = "Sem permissão para o movimento."; return; }
+  }
+  window.addEventListener("devicemotion", onMotion);
+  openSocket(); requestAnimationFrame(flush);
+  $("pointer-off").hidden = true; $("pointer-on").hidden = false;
+});
+const pad = $("pad");
+pad.addEventListener("pointerdown", e => { e.preventDefault(); holding = true; acc = [0, 0]; moved = 0; downAt = Date.now(); pad.classList.add("active"); });
+["pointerup", "pointercancel", "pointerleave"].forEach(ev => pad.addEventListener(ev, e => {
+  if (!holding) return;
+  holding = false; pad.classList.remove("active"); smooth = [0, 0];
+  if (calStep) { calibrationDone(); return; }
+  if (e.type === "pointerup" && Date.now() - downAt < 250 && moved < 15) send({c: "left"});
+}));
+$("calibrate").addEventListener("click", () => {
+  calStep = 1; sums = {alpha: 0, beta: 0, gamma: 0};
+  pad.innerHTML = "Passo 1: segure aqui e vire o celular para a DIREITA, depois solte";
+});
+$("click-l").addEventListener("click", () => send({c: "left"}));
+$("click-r").addEventListener("click", () => send({c: "right"}));
+$("scroll-u").addEventListener("click", () => send({s: 3}));
+$("scroll-d").addEventListener("click", () => send({s: -3}));
+const casa = document.getElementById("casa");
+casa.href = "__HOME_URL__" || (location.protocol + "//" + location.hostname + ":8123/");
+</script>
+</body>
+</html>
+"""
+
+
+def read_frame(stream):
+    """One WebSocket frame from the client: (opcode, payload), or None when the stream ends."""
+    head = stream.read(2)
+    if len(head) < 2:
+        return None
+    opcode, length, masked = head[0] & 0x0F, head[1] & 0x7F, head[1] & 0x80
+    if length == 126:
+        length = int.from_bytes(stream.read(2), "big")
+    elif length == 127:
+        length = int.from_bytes(stream.read(8), "big")
+    if length > 65536:
+        return None
+    mask = stream.read(4) if masked else b"\0\0\0\0"
+    data = stream.read(length)
+    return opcode, bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+
+
+class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    def allowed(self):
+        addr = ipaddress.ip_address(self.client_address[0])
+        if addr.version == 6 and addr.ipv4_mapped:
+            addr = addr.ipv4_mapped
+        return addr.is_private or addr.is_loopback or addr in TAILNET
+
+    def reply(self, status, body, kind="text/plain; charset=utf-8"):
+        data = body if isinstance(body, bytes) else body.encode()
+        self.send_response(status)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        if not self.allowed():
+            return self.reply(HTTPStatus.FORBIDDEN, "only from the local network")
+        if self.path == "/ws" and self.headers.get("Upgrade", "").lower() == "websocket":
+            return self.pointer_socket()
+        if self.path in ("/", "/index.html"):
+            page = PAGE.replace("__HOME_URL__", HOME_URL).replace("__TAILNET_HOST__", TAILNET_HOST)
+            return self.reply(HTTPStatus.OK, page, "text/html; charset=utf-8")
+        if self.path == "/apps":
+            apps = [{k: a[k] for k in ("id", "name", "logo")} for a in menu_apps()]
+            return self.reply(HTTPStatus.OK, json.dumps(apps, ensure_ascii=False), "application/json")
+        if self.path.startswith("/logo/"):
+            name = Path(self.path[len("/logo/"):]).name.replace("%20", " ")
+            logo = find_logo(name) if name else None
+            if logo:
+                kind = {"svg": "image/svg+xml", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}.get(
+                    logo.suffix.lower().lstrip("."), "image/png")
+                return self.reply(HTTPStatus.OK, logo.read_bytes(), kind)
+        self.reply(HTTPStatus.NOT_FOUND, "not found")
+
+    def do_POST(self):
+        if not self.allowed():
+            return self.reply(HTTPStatus.FORBIDDEN, "only from the local network")
+        parts = self.path.strip("/").split("/")
+        try:
+            if len(parts) == 2 and parts[0] == "button" and parts[1] in BUTTONS:
+                cec({"button": parts[1]})
+            elif len(parts) == 2 and parts[0] == "tv" and parts[1] in ("on", "standby"):
+                run = subprocess.run([str(KIOSK), "wake" if parts[1] == "on" else "standby"],
+                                     capture_output=True, text=True, timeout=20)
+                if run.returncode:
+                    return self.reply(HTTPStatus.BAD_GATEWAY, run.stderr.strip()[-200:] or "kiosk failed")
+            elif len(parts) == 2 and parts[0] == "app" and parts[1] in {a["id"] for a in menu_apps()}:
+                subprocess.Popen([str(KIOSK), "run", parts[1]], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+            else:
+                return self.reply(HTTPStatus.NOT_FOUND, "unknown action")
+        except OSError as err:
+            return self.reply(HTTPStatus.SERVICE_UNAVAILABLE, f"couchPie isn't answering: {err}")
+        self.reply(HTTPStatus.NO_CONTENT, b"")
+
+    def pointer_socket(self):
+        key = self.headers.get("Sec-WebSocket-Key", "")
+        accept = base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
+        self.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+        self.close_connection = True
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as remote:
+                remote.connect(CEC_SOCKET)
+                while (frame := read_frame(self.rfile)) is not None:
+                    opcode, payload = frame
+                    if opcode == 8:  # close
+                        break
+                    if opcode == 9:  # ping -> pong
+                        self.wfile.write(bytes([0x8A, len(payload)]) + payload); self.wfile.flush()
+                        continue
+                    if opcode != 1:
+                        continue
+                    try:
+                        msg = json.loads(payload)
+                    except ValueError:
+                        continue
+                    out = {}
+                    if isinstance(msg.get("m"), list) and len(msg["m"]) == 2:
+                        out["pointer"] = msg["m"]
+                    if msg.get("c") in ("left", "right"):
+                        out["click"] = msg["c"]
+                    if isinstance(msg.get("s"), int):
+                        out["scroll"] = msg["s"]
+                    if out:
+                        remote.sendall((json.dumps(out) + "\n").encode())
+        except OSError:
+            pass
+
+    def log_message(self, fmt, *args):
+        pass
+
+
+if __name__ == "__main__":
+    print(f"phone remote on port {PORT}", flush=True)
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
