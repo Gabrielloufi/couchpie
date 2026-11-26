@@ -1,0 +1,19 @@
+#!/bin/bash
+# The Home Assistant panel on the small touch screen next to the TV: Chromium in kiosk mode,
+# with its own profile and the X class "painel-ha", which labwc's window rule moves to the
+# panel's output (see labwc-windowrules.xml). Install to ~/.local/bin and start it from
+# labwc's autostart.
+#
+# Home Assistant logs it in by itself as a non-admin user through a trusted_networks auth
+# provider for this Pi's own address only (see ../README.md), so the URL must use the Pi's
+# LAN address, not localhost: tailscale serve proxies from 127.0.0.1, which stays untrusted.
+#
+#   PAINEL_URL   the dashboard (default: this Pi's LAN address, port 8123, /painel-casa/sala)
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}" DISPLAY="${DISPLAY:-:0}"   # Xwayland, like the couchPie kiosk
+PROFILE="$HOME/.local/share/painel-ha"
+URL="${PAINEL_URL:-http://$(hostname -I | awk '{print $1}'):8123/painel-casa/sala}"
+pgrep -f -- "--user-data-dir=$PROFILE( |$)" > /dev/null && exit 0
+mkdir -p "$PROFILE"
+exec env LANG=pt_BR.UTF-8 LANGUAGE=pt_BR chromium --user-data-dir="$PROFILE" --class=painel-ha --kiosk \
+    --no-first-run --noerrdialogs --disable-session-crashed-bubble --password-store=basic \
+    --check-for-update-interval=31536000 --lang=pt-BR "$URL"
