@@ -104,7 +104,8 @@ chromium_kiosk() {
 # the arrows move a highlight between everything clickable, OK clicks, Back goes back
 web_page() {
     local name=$1 raise_key=$2 url=$3
-    chromium_kiosk "$name" "$raise_key" --load-extension="$BROWSER_EXTENSION" "$url"
+    shift 3
+    chromium_kiosk "$name" "$raise_key" --load-extension="$BROWSER_EXTENSION" "$@" "$url"
 }
 
 # Paramount+ refuses fresh browser profiles (HTTP 403 from its bot protection, even
@@ -225,7 +226,8 @@ case "${1:-}" in
             kodi)
                 run_or_raise "/kodi\.bin" XF86Launch2 kodi ;;
             browser)   web_page browser XF86Launch1 "$BROWSER_HOME" ;;
-            netflix)   web_page netflix XF86Launch4 "https://www.netflix.com" ;;
+            # The DevTools port (127.0.0.1 only) lets kiosk-watch search and play a title
+            netflix)   web_page netflix XF86Launch4 "https://www.netflix.com" --remote-debugging-port=9231 ;;
             paramount) desktop_page XF86Launch5 "https://www.paramountplus.com/home/" ;;
             hbomax)    web_page hbomax XF86Launch6 "https://www.hbomax.com" ;;
             disney)    web_page disney XF86Launch7 "https://www.disneyplus.com" ;;
