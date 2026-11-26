@@ -7,9 +7,27 @@ uplink to the hotel's network. The adapter plugs straight into one of the Pi's U
 With an Ethernet uplink (a hotel room's wall socket, a travel router, or USB tethering
 from a phone) no adapter is needed.
 
-> **Not tested yet.** No specific adapter model has been tested with couchPie. This page
-> lists what to check before buying; confirm each point for the model you choose, and
-> please add what you find.
+> **Tested so far: one adapter** (below). This page lists what to check before buying;
+> confirm each point for the model you choose, and please add what you find.
+
+## Tested adapters
+
+| Chipset (USB ID) | Driver | Bands | Client | Access point | Notes |
+|---|---|---|---|---|---|
+| MediaTek/Ralink MT7601U (`148f:7601`) | `mt7601u`, in the kernel | 2.4 GHz only | Yes | **No** | Found and named `wlan1` on a Pi 5 with Raspberry Pi OS Bookworm, with nothing to install (2026-11-26). Speed and stability not tested yet |
+
+**What this means for the travel router.**
+- The MT7601U can be the uplink to the hotel, as long as the hotel offers 2.4 GHz.
+- It can't be the access point.
+- That matches the usual arrangement anyway, because the Pi 5's built-in Wi-Fi (`brcmfmac`)
+  does support access point mode.
+
+**The name can mislead.** The MT7601U is sold under many names, sometimes with "MT76" in
+them. It has its own driver, though, and isn't part of the `mt76` family named below.
+
+**Checking without `iw`.** Raspberry Pi OS doesn't always include `iw`. NetworkManager reports
+the same thing: run `nmcli -f WIFI-PROPERTIES device show wlan1` and look at the `AP` and
+`5GHZ` lines.
 
 ## Limitations to know before buying
 
