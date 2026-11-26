@@ -78,6 +78,9 @@ Stage 1, running on a Raspberry Pi 5.
 
 ### Fixed
 
+- The touch panel next to the TV no longer shows "connection refused" after a boot. It waits
+  for the network and Home Assistant before opening, and takes the Pi's LAN address from the
+  default route.
 - Home Assistant over the tailnet answered "400: Bad Request": since 2026.11 its proxy
   settings live in Settings → System → Network and must be confirmed within 5 minutes; the
   ignored `http:` YAML is gone, and the README and rebuild guide give the steps.

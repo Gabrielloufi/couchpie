@@ -11,8 +11,25 @@
 #   PAINEL_URL   the dashboard (default: this Pi's LAN address, port 8123, /painel-casa/sala)
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}" DISPLAY="${DISPLAY:-:0}"   # Xwayland, like the couchPie kiosk
 PROFILE="$HOME/.local/share/painel-ha"
-URL="${PAINEL_URL:-http://$(hostname -I | awk '{print $1}'):8123/painel-casa/sala}"
 pgrep -f -- "--user-data-dir=$PROFILE( |$)" > /dev/null && exit 0
+
+# The address the Pi uses on the home network: the default route's source. Not the first of
+# `hostname -I`, which can be the tailnet's or Docker's, or nothing yet right after boot.
+lan_address() {
+    ip -4 route show default 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}'
+}
+
+# After a boot the desktop starts before the network and Home Assistant (in Docker) are up,
+# and Chromium shows "connection refused" without trying again. Wait up to 5 minutes.
+for _ in $(seq 100); do
+    address="$(lan_address)"
+    URL="${PAINEL_URL:-http://$address:8123/painel-casa/sala}"
+    if [ -n "${PAINEL_URL:-$address}" ] && curl -s -o /dev/null --max-time 2 "$URL"; then
+        break
+    fi
+    sleep 1
+done
+
 mkdir -p "$PROFILE"
 exec env LANG=pt_BR.UTF-8 LANGUAGE=pt_BR chromium --user-data-dir="$PROFILE" --class=painel-ha --kiosk \
     --no-first-run --noerrdialogs --disable-session-crashed-bubble --password-store=basic \

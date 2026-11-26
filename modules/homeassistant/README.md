@@ -104,8 +104,8 @@ A small touch screen on the Pi's second HDMI port can show a Home Assistant dash
 every app stays on the TV. The module has the two pieces in `painel/`. For now they're
 installed by hand (HOMEA-15):
 
-1. **A dashboard that fits the screen.** The sections view with two columns fits 1024×768.
-   Don't make it admin-only.
+1. **A dashboard that fits the screen.** The sections view with two columns suits a 7-inch
+   1024×600 screen. Don't make it admin-only.
 2. **A user for the panel** that isn't an admin, with "Can only log in from the local network"
    on.
 3. **Automatic login for that user, from the Pi only,** in `configuration.yaml`:
@@ -134,6 +134,11 @@ installed by hand (HOMEA-15):
    - It runs under Xwayland (`DISPLAY=:0`), like the kiosk's browsers.
    - `PAINEL_URL` picks the dashboard. The default is `http://<the Pi's LAN
      address>:8123/painel-casa/sala`.
+     - The LAN address is the default route's source.
+     - It isn't the first address of `hostname -I`, which can be the tailnet's or Docker's,
+       or nothing yet right after boot.
+   - **After a boot,** it waits up to 5 minutes for the network and Home Assistant before
+     opening. The desktop starts first, and Chromium doesn't retry a refused connection.
 5. **The window rules.** Add `painel/labwc-windowrules.xml` to `~/.config/labwc/rc.xml` and
    reload labwc (`kill -HUP` its process). `wlr-randr` lists your outputs.
    - **Every window goes to the TV** (`identifier="*"`, `MoveToOutput` HDMI-A-2): Pegasus,
@@ -144,8 +149,13 @@ installed by hand (HOMEA-15):
    - **Why the class:** the panel's Chromium is started with `--class=painel-ha`. Its usual
      `chromium (<profile>)` name arrives only after the window opens, too late for a window
      rule.
-   - **An unplugged TV** (not just in standby) removes its output. Windows would then land on
-     the touch screen, unless the kernel forces the connector on (`video=HDMI-A-2:D`).
+   - **An unplugged TV** (not just in standby) removes its output, and windows would then land
+     on the touch screen. To prevent that, the kernel forces the connector on:
+     1. Add ` video=HDMI-A-2:D` to the end of the single line in `/boot/firmware/cmdline.txt`.
+     2. Reboot.
+
+     With the TV plugged in, it still gets its own resolution (tested 2026-11-26). An unplugged
+     TV at boot isn't tested yet.
 6. **The touch input** goes to the same output: a line like `<touch
    deviceName="<your touchscreen>" mapToOutput="HDMI-A-1" mouseEmulation="yes" />` in
    `rc.xml`. Otherwise touches land on the TV's output.
