@@ -226,6 +226,13 @@ Experiments to run first, to find out what is possible before building on it:
 
 * [ ] Easy retro games: RetroArch emulators behind a Pegasus "Jogos" folder, shipped with free and homebrew games (you add your own game files), playable with phones or Bluetooth gamepads (8BitDo)
 * [ ] Home Assistant on a machine of its own
+* [ ] Study a media library stack, likely as an optional module:
+  * the pieces: [Jellyfin](https://jellyfin.org/) instead of Kodi, [Seerr](https://seerr.dev/) for
+    requests, [Radarr](https://radarr.video/), [Sonarr](https://sonarr.tv/),
+    [Prowlarr](https://prowlarr.com/), [Bazarr](https://www.bazarr.media/) for subtitles, and
+    qBittorrent behind them, for media you have the right to download;
+  * to work out: where each part runs (the Pi 5 has no hardware video encoder, and the PC sleeps),
+    always-on storage, the Pi's memory, and navigation with the TV remote.
 * [ ] A modular installer: choose which modules go on the Pi (media center, games, Home Assistant, personal assistant), each person's own settings in a repository of their own
 * [ ] An image builder: a ready-to-boot SD card
 
