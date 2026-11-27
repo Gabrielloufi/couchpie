@@ -33,6 +33,20 @@ The phone as the TV's remote: a web page that any phone on the home network, the
     phone is held and on the browser.
   - A dead zone and smoothing steady the hand.
 
+## Profiles: a name and an avatar
+
+The first time a phone opens the remote (on the Pi's Wi-Fi this is the sign-in page), a window
+asks for the person's name and an avatar.
+- **Where it's kept:** by the phone's MAC address, in `~/.local/state/couchpie/phones.json`
+  (mode 600). Phones use one MAC per Wi-Fi network, so it stays the same on this one.
+- **On the page:** the avatar is at the top. Tap it to change the name or the avatar.
+- **For the assistant:** each message starts with "(quem fala: Nome, pelo controle do celular)",
+  so it knows whom it's talking to. The name is what the person typed, not a login.
+- **Avatars:** initials on a color, for now. The profile's `avatar` has a `kind`, so pictures
+  (`"picture"`) can come later. The "Foto ou desenho" button is there, off.
+- **Through tailscale serve:** phones have no MAC that the Pi can see (they all arrive from
+  127.0.0.1), so there's no profile.
+
 ## The "Controle Remoto" tile
 
 The home screen's tile opens `/tv` on the TV (`kiosk run remote`). It shows two QR codes:
@@ -62,7 +76,8 @@ Browsers only give the gyroscope and the microphone to HTTPS pages. The same add
 
 On the Pi's own Wi-Fi, phones show "Sign in to the network", and it opens this remote (see
 modules/ap).
-- **Pronto** on the banner releases the phone's internet.
+- The window asks for the name and avatar (above). **Entrar** saves them and releases the
+  phone's internet.
 - The sign-in window has no microphone, so for voice the page points to the browser:
   `couchpie.lan`, or the TV's second QR code.
 

@@ -51,13 +51,13 @@ Phones check whether a new Wi-Fi reaches the internet by fetching known addresse
   - The hotspot's DNS points those addresses to the Pi, and port 80 goes to the phone remote.
   - The remote answers with a redirect to itself, so the phone shows "Sign in to the network"
     and opens the remote.
-  - On that page, **Pronto** releases the phone: from then on the remote answers the checks as
-    the internet would.
+  - That page asks for the person's name and an avatar (modules/phone). **Entrar** saves them
+    and releases the phone: from then on the remote answers the checks as the internet would.
   - The release lasts until the phone leaves the Wi-Fi (`iw station dump`, every 30 s).
 - **Why the page sends you to the browser:** the sign-in window is a reduced browser without a
   microphone. For voice, the page points to the browser: `couchpie.lan`, or the TV's second QR
   code.
-- **Until Pronto:** Android uses mobile data for the internet.
+- **Until Entrar:** Android uses mobile data for the internet.
 - **To turn the prompt off:** set `AP_PORTAL=0` in `/etc/default/couchpie-ap`, then
   `sudo systemctl start couchpie-ap-refresh`.
 

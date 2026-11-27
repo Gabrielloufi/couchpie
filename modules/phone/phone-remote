@@ -16,7 +16,10 @@ tailnet open http://<pi>:8096/.
   POST /assistant/voice    audio recorded on the phone -> {"heard", "answer"}
   POST /assistant/text     {"text"} -> {"heard", "answer"}
   POST /assistant/speak    {"text"} -> the answer spoken (WAV)
-  POST /portal/done        the phone on the Pi's Wi-Fi is done with the sign-in page
+  GET  /me                 this phone's profile: {"known", "profile": {"name", "avatar"}, "colors"}
+  POST /me                 {"name", "avatar"}: save it
+  POST /portal/done        {"name", "avatar"}: the phone on the Pi's Wi-Fi is done with the
+                           sign-in page; saves its profile and releases its internet
   GET  /tv                 for the TV only (the "Controle Remoto" tile): QR codes that join the
                            Pi's Wi-Fi and open the remote. Served to the Pi itself only, so the
                            Wi-Fi password never leaves it.
@@ -31,8 +34,15 @@ HTTPS. Browsers only give the gyroscope and the microphone to HTTPS pages.
 The sign-in prompt (captive portal). The access point's DNS sends the phones' internet checks
 here (port 80 is redirected to this one). Until a phone taps "Pronto" on the page, its checks
 are answered with a redirect to the remote, so the phone shows "sign in to the network", and
-that opens the remote. After "Pronto" they're answered as the internet would, until the phone
-leaves the Wi-Fi.
+that opens the remote. The page asks for a name and an avatar first; "Entrar" saves them and
+releases the phone: its checks are then answered as the internet would, until the phone leaves
+the Wi-Fi.
+
+Profiles. A phone's name and avatar are kept by its MAC address (phones use one per Wi-Fi
+network), in ~/.local/state/couchpie/phones.json, so the page greets it by name next time. The
+name is what the person typed, not a login. Avatars are initials on a color for now; the
+"avatar" object has a "kind" so pictures can come later. Phones reached without a MAC (through
+tailscale serve) have no profile.
 
 The voice assistant. The page records the phone's microphone; this program asks the assistant
 through OpenAI-style endpoints: speech to text, the chat, text to speech. The defaults are PiPA's,
@@ -49,6 +59,7 @@ never the internet. Settings, all optional:
   PHONE_REMOTE_AP_INTERFACE    its Wi-Fi interface (wlan0)
   PHONE_REMOTE_AP_CONNECTION   its NetworkManager connection, for the Wi-Fi's name (couchpie-ap)
   PHONE_REMOTE_AP_PASSWORD     the file with its password (~/.config/couchpie/ap-password)
+  PHONE_REMOTE_PROFILES        the profiles file (~/.local/state/couchpie/phones.json)
   PHONE_REMOTE_TLS_PORT        8446
   PHONE_REMOTE_TLS_CERT/_KEY   /etc/couchpie/tls/phone.crt and .key
   PHONE_REMOTE_ASSISTANT       the assistant's name on the page (PiPA)
@@ -123,6 +134,45 @@ PROBES = {
     "www.msftconnecttest.com": "Microsoft Connect Test", "nmcheck.gnome.org": "NetworkManager is online\n",
 }
 signed_in = {}  # the phones done with the sign-in page: MAC (or IP) -> when
+
+PROFILES = Path(os.environ.get("PHONE_REMOTE_PROFILES", Path.home() / ".local/state/couchpie/phones.json"))
+# Avatar colors: white initials read well on all of them
+COLORS = ["#2c6fbb", "#1f9d55", "#c0392b", "#8e44ad", "#d35400", "#16a085", "#c2185b", "#5d6d7e"]
+# What an avatar can be. Only "initials" (on a color) for now; "picture" (an uploaded or drawn
+# image kept next to the profiles) is planned.
+AVATAR_KINDS = {"initials"}
+profiles_lock = threading.Lock()
+
+
+def load_profiles():
+    try:
+        return json.loads(PROFILES.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_profile(key, name, avatar):
+    with profiles_lock:
+        profiles = load_profiles()
+        old = profiles.get(key, {})
+        profiles[key] = {"name": name, "avatar": avatar, "since": old.get("since") or int(time.time()),
+                         "seen": int(time.time())}
+        PROFILES.parent.mkdir(parents=True, exist_ok=True)
+        tmp = PROFILES.with_suffix(".tmp")
+        tmp.write_text(json.dumps(profiles, ensure_ascii=False, indent=1))
+        tmp.chmod(0o600)
+        tmp.replace(PROFILES)
+    return profiles[key]
+
+
+def clean_profile(body):
+    """The name and avatar a phone sent, tidied; ValueError without a name."""
+    name = " ".join("".join(c for c in str(body.get("name") or "") if c.isprintable()).split())[:30]
+    if not name:
+        raise ValueError("no name")
+    avatar = body.get("avatar") if isinstance(body.get("avatar"), dict) else {}
+    color = avatar.get("color") if avatar.get("color") in COLORS else COLORS[0]
+    return name, {"kind": "initials", "color": color}
 
 
 def menu_apps():
@@ -296,8 +346,10 @@ def assistant_available():
         return False
 
 
-def ask_assistant(text, phone):
+def ask_assistant(text, phone, name=""):
     session = "celular-" + re.sub(r"[^0-9a-zA-Z.]", "", phone)  # one conversation per phone
+    if name:  # who's talking, as the phone's profile says (typed by the person, not a login)
+        text = f"(quem fala: {name}, pelo controle do celular) {text}"
     body = {"model": "pipa", "user": session, "messages": [{"role": "user", "content": text}]}
     reply = json.loads(api(CHAT_URL + "/chat/completions", body, timeout=300))
     return (reply["choices"][0]["message"].get("content") or "").strip()
@@ -317,6 +369,7 @@ PAGE = """<!doctype html>
     :root { --bg: #1e1e22; --card: #2b2b31; --text: #f2f2f5; --muted: #a0a0aa; --key: #3a3a42; --ok: #3d6a8c; }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 16px system-ui, sans-serif;
          user-select: none; -webkit-user-select: none; }
   main { max-width: 440px; margin: 0 auto; padding: 16px; }
@@ -348,9 +401,26 @@ PAGE = """<!doctype html>
          margin-bottom: 10px; touch-action: none; font-weight: 600; }
   #pad.active { filter: brightness(1.25); }
   #status { min-height: 20px; color: var(--muted); font-size: 13px; text-align: center; margin-top: 10px; }
-  #portal { background: var(--card); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
-  #portal p { margin: 0 0 10px; }
-  #portal button { width: 100%; background: var(--green); color: #fff; font-weight: 600; }
+  .me { display: flex; align-items: center; gap: 10px; }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: #fff; font-weight: 700; font-size: 16px; background: var(--muted); flex: none; padding: 0; }
+  .avatar.big { width: 84px; height: 84px; font-size: 32px; }
+  .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: flex; align-items: center;
+           justify-content: center; padding: 16px; z-index: 10; }
+  .sheet { background: var(--bg); border-radius: 20px; padding: 20px; width: 100%; max-width: 400px;
+           display: flex; flex-direction: column; gap: 14px; }
+  .sheet h2 { color: var(--text); font-size: 20px; font-weight: 700; margin: 0; text-align: center; }
+  .sheet p { margin: 0; font-size: 15px; line-height: 1.4; }
+  .who { display: flex; align-items: center; gap: 16px; }
+  .swatches { display: grid; grid-template-columns: repeat(4, 32px); gap: 10px; }
+  .swatches button { width: 32px; height: 32px; border-radius: 50%; padding: 0; border: 3px solid transparent; }
+  .swatches button.on { border-color: var(--text); }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
+  .field input { font: inherit; font-size: 17px; padding: 12px; border-radius: 12px; border: 0; background: var(--card);
+                 color: var(--text); user-select: text; -webkit-user-select: text; }
+  .soon { background: var(--card); color: var(--muted); font-size: 14px; }
+  .primary { background: var(--green); color: #fff; font-weight: 600; height: 52px; }
+  .primary:disabled { opacity: 0.5; }
   #talk { background: var(--ok); color: var(--okt); font-weight: 600; font-size: 18px; }
   #talk.rec { background: var(--red); color: #fff; }
   #talk:disabled { opacity: 0.6; }
@@ -368,16 +438,26 @@ PAGE = """<!doctype html>
 <body>
 <main>
   <header>
-    <h1>couchPie</h1>
+    <div class="me"><button class="avatar" id="me" title="Seu nome e avatar" hidden>?</button><h1>couchPie</h1></div>
     <div class="power">
       <button data-post="/tv/on" title="Ligar a TV">TV ⏻</button>
       <button data-post="/tv/standby" title="Desligar a TV">TV ⏾</button>
     </div>
   </header>
-  <div id="portal" hidden>
-    <p id="portal-text">📶 Wi-Fi do couchPie: use o controle aqui mesmo. Quando quiser a internet neste
-      celular, toque em Pronto.</p>
-    <button id="portal-done">Pronto</button>
+  <div class="modal" id="profile" hidden>
+    <form class="sheet" id="profile-form">
+      <h2 id="profile-title">Bem-vindo ao couchPie</h2>
+      <p id="profile-text">Como você se chama? Seu nome aparece no controle<span id="profile-ai"></span>.</p>
+      <div class="who"><div class="avatar big" id="profile-avatar">?</div><div class="swatches" id="swatches"></div></div>
+      <label class="field">Seu nome<input id="profile-name" maxlength="30" autocomplete="nickname" enterkeyhint="done"></label>
+      <button type="button" class="soon" disabled>📷 Foto ou desenho (em breve)</button>
+      <button class="primary" id="profile-save" disabled>Entrar</button>
+    </form>
+    <div class="sheet" id="profile-done" hidden>
+      <h2 id="done-title">Pronto!</h2>
+      <p id="done-text"></p>
+      <button class="primary" id="done-close">Usar o controle</button>
+    </div>
   </div>
   <div class="pad">
     <span></span><button data-button="up" data-repeat>▲</button><span></span>
@@ -524,18 +604,67 @@ $("scroll-d").addEventListener("click", () => send({s: -3}));
 // HTTPS: on the tailnet, or on the Pi's own Wi-Fi (same address)
 const HTTPS_URL = "__HTTPS_URL__";
 const HTTPS_LINK = HTTPS_URL ? 'Abra por aqui: <a href="' + HTTPS_URL + '">' + HTTPS_URL.replace("https://", "") + "</a>" : "";
-// The sign-in page of the Pi's Wi-Fi
-if (new URLSearchParams(location.search).has("portal")) {
-  $("portal").hidden = false;
-  $("portal-done").addEventListener("click", async () => {
-    try { await fetch("/portal/done", {method: "POST"}); } catch (e) {}
-    $("portal-text").innerHTML = "Pronto: a internet está liberada neste celular. Para falar com a " + ASSISTANT +
-      " e apontar com o celular, abra o controle no navegador (esta janela não tem microfone): " +
-      (HTTPS_URL ? '<a href="' + HTTPS_URL + '">' + HTTPS_URL.replace("https://", "") + "</a>, " : "") +
-      "digite <b>couchpie.lan</b> no Chrome ou escaneie o segundo QR da TV.";
-    $("portal-done").hidden = true;
-  });
+// The phone's profile (name and avatar), asked on the sign-in page of the Pi's Wi-Fi and
+// editable from the avatar at the top
+const PORTAL = new URLSearchParams(location.search).has("portal");
+let me = {known: false, profile: null, colors: ["#2c6fbb"]}, color = null;
+const initials = name => name.trim().split(/\\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase() || "?";
+function paint(el, name, avatar) { el.textContent = initials(name || ""); el.style.background = (avatar && avatar.color) || ""; }
+function drawSwatches() {
+  const box = $("swatches"); box.innerHTML = "";
+  for (const c of me.colors) {
+    const b = document.createElement("button"); b.type = "button"; b.style.background = c;
+    b.className = c === color ? "on" : ""; b.setAttribute("aria-label", "cor " + c);
+    b.addEventListener("click", () => { color = c; drawSwatches(); preview(); });
+    box.append(b);
+  }
 }
+function preview() {
+  const name = $("profile-name").value;
+  paint($("profile-avatar"), name, {color});
+  $("profile-save").disabled = !name.trim();
+}
+function openProfile() {
+  const p = me.profile;
+  $("profile-title").textContent = p ? (PORTAL ? "Oi de novo, " + p.name + "!" : "Seu perfil") : "Bem-vindo ao couchPie";
+  $("profile-text").hidden = !!p && !PORTAL;
+  $("profile-save").textContent = PORTAL ? "Entrar" : "Salvar";
+  $("profile-name").value = p ? p.name : "";
+  color = (p && p.avatar && p.avatar.color) || color || me.colors[Math.floor(Math.random() * me.colors.length)];
+  drawSwatches(); preview();
+  $("profile-form").hidden = false; $("profile-done").hidden = true; $("profile").hidden = false;
+}
+function showMe() {
+  if (!me.known) return;
+  $("me").hidden = false;
+  paint($("me"), me.profile ? me.profile.name : "", me.profile && me.profile.avatar);
+}
+$("profile-name").addEventListener("input", preview);
+$("me").addEventListener("click", openProfile);
+$("profile").addEventListener("click", e => { if (e.target === $("profile") && !PORTAL) $("profile").hidden = true; });
+$("profile-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const body = JSON.stringify({name: $("profile-name").value, avatar: {kind: "initials", color}});
+  $("profile-save").disabled = true;
+  try {
+    const r = await fetch(PORTAL ? "/portal/done" : "/me", {method: "POST", headers: {"Content-Type": "application/json"}, body});
+    const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText);
+    if (j.profile) me.profile = j.profile;
+  } catch (err) { say("Não salvou: " + err.message); $("profile-save").disabled = false; return; }
+  showMe();
+  if (!PORTAL) { $("profile").hidden = true; return; }
+  $("done-title").textContent = "Pronto, " + me.profile.name + "!";
+  $("done-text").innerHTML = "A internet está liberada neste celular. Para falar com a " + ASSISTANT +
+    " e apontar com o celular, abra o controle no navegador (esta janela não tem microfone): " +
+    (HTTPS_URL ? '<a href="' + HTTPS_URL + '">' + HTTPS_URL.replace("https://", "") + "</a>, " : "") +
+    "digite <b>couchpie.lan</b> no Chrome ou escaneie o segundo QR da TV.";
+  $("profile-form").hidden = true; $("profile-done").hidden = false;
+});
+$("done-close").addEventListener("click", () => { $("profile").hidden = true; });
+fetch("/me").then(r => r.json()).then(j => {
+  me = j; showMe();
+  if (PORTAL || (me.known && !me.profile)) openProfile();
+}).catch(() => {});
 // The voice assistant: record, send, show and speak the answer
 const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 const voice = new Audio();
@@ -580,6 +709,7 @@ const ASSISTANT = "__ASSISTANT__";
 fetch("/assistant").then(r => r.json()).then(info => {
   if (!info.available) return;
   $("assistant").hidden = false; $("assistant-name").textContent = info.name;
+  $("profile-ai").textContent = " e nas suas conversas com " + info.name;
 });
 $("talk").addEventListener("click", async () => {
   unlockAudio(); voice.pause(); if (window.speechSynthesis) speechSynthesis.cancel();
@@ -671,6 +801,28 @@ class Handler(BaseHTTPRequestHandler):
         ip = self.client_address[0].removeprefix("::ffff:")
         return client_mac(ip) or ip
 
+    def profile_key(self):
+        """The phone's MAC, which its profile is kept by; None when it isn't on a local network
+        (through tailscale serve every phone is 127.0.0.1)."""
+        return client_mac(self.client_address[0].removeprefix("::ffff:"))
+
+    def json_body(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        if not 0 < length <= 65536:
+            return {}
+        try:
+            body = json.loads(self.rfile.read(length))
+        except ValueError:
+            return {}
+        return body if isinstance(body, dict) else {}
+
+    def send_profile(self, status=HTTPStatus.OK, error=None):
+        key = self.profile_key()
+        data = {"known": bool(key), "profile": load_profiles().get(key) if key else None, "colors": COLORS}
+        if error:
+            data["error"] = error
+        self.reply(status, json.dumps(data, ensure_ascii=False), "application/json; charset=utf-8")
+
     def probe(self, host):
         """A phone checking for the internet: answered as the internet would once it's done with
         the sign-in page, else sent to the page."""
@@ -702,6 +854,8 @@ class Handler(BaseHTTPRequestHandler):
             page = (PAGE.replace("__HOME_URL__", HOME_URL).replace("__HTTPS_URL__", https)
                     .replace("__ASSISTANT__", ASSISTANT))
             return self.reply(HTTPStatus.OK, page, "text/html; charset=utf-8")
+        if path == "/me":
+            return self.send_profile()
         if path == "/assistant":
             info = {"name": ASSISTANT, "available": assistant_available()}
             return self.reply(HTTPStatus.OK, json.dumps(info), "application/json")
@@ -723,9 +877,16 @@ class Handler(BaseHTTPRequestHandler):
         parts = self.path.split("?")[0].strip("/").split("/")
         if parts[0] == "assistant" and len(parts) == 2:
             return self.assistant(parts[1])
-        if parts == ["portal", "done"]:
-            signed_in[self.phone()] = time.time()
-            return self.reply(HTTPStatus.NO_CONTENT, b"")
+        if parts in (["me"], ["portal", "done"]):
+            key, body = self.profile_key(), self.json_body()
+            try:
+                if key and (body or parts == ["me"]):
+                    save_profile(key, *clean_profile(body))
+            except ValueError as err:
+                return self.send_profile(HTTPStatus.BAD_REQUEST, str(err))
+            if parts == ["portal", "done"]:
+                signed_in[self.phone()] = time.time()
+            return self.send_profile()
         try:
             if len(parts) == 2 and parts[0] == "button" and parts[1] in BUTTONS:
                 cec({"button": parts[1]})
@@ -778,7 +939,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(HTTPStatus.OK, api(TTS_URL + "/audio/speech", {"input": text}), "audio/wav")
             else:
                 return self.reply(HTTPStatus.NOT_FOUND, json.dumps({"error": "not here"}), "application/json")
-            answer = ask_assistant(heard, self.phone()) if heard else ""
+            key = self.profile_key()
+            name = (load_profiles().get(key) or {}).get("name", "") if key else ""
+            answer = ask_assistant(heard, self.phone(), name) if heard else ""
         except urllib.error.HTTPError as err:
             detail = err.read().decode(errors="replace")[-200:]
             return self.reply(HTTPStatus.BAD_GATEWAY, json.dumps({"error": f"{err.code}: {detail}"}), "application/json")
