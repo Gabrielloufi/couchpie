@@ -233,6 +233,8 @@ case "${1:-}" in
             disney)    web_page disney XF86Launch7 "https://www.disneyplus.com" ;;
             globoplay) web_page globoplay XF86Launch9 "https://globoplay.globo.com" ;;
             primevideo) web_page primevideo XF86LaunchA "https://www.primevideo.com" ;;
+            # QR codes that join the Pi's Wi-Fi and open the phone remote (modules/phone, modules/ap)
+            remote)    chromium_kiosk remote XF86LaunchB "http://127.0.0.1:8096/tv" ;;
             youtube)
                 # Its TV interface handles the remote itself, so no navigation extension
                 chromium_kiosk youtube XF86Launch8 --user-agent="$TV_USER_AGENT" \

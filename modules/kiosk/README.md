@@ -65,7 +65,7 @@ doesn't do, then closes Moonlight. With the PC side set up (see
 2. Add `<id>` to the `run` case in `kiosk`. For a website, one line:
    `<id>) web_page <id> XF86LaunchB "https://…" ;;`
 3. For a website, add a binding for its raise key to `labwc-rc.xml`, matching
-   `chromium (*/kiosk/<id>)`. Unused keys: `XF86LaunchB` to `XF86LaunchF`.
+   `chromium (*/kiosk/<id>)`. Unused keys: `XF86LaunchC` to `XF86LaunchF`.
 4. Optionally a logo: see `../pegasus/menu/logos/`.
 
 ## Playing a title: `kiosk-watch`

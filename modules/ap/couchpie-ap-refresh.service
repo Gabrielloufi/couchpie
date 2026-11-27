@@ -1,0 +1,9 @@
+[Unit]
+Description=couchPie Wi-Fi: local names, the phone remote's HTTPS certificate, the sign-in prompt
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/couchpie-ap
+ExecStart=/usr/local/sbin/couchpie-ap-refresh

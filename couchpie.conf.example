@@ -21,3 +21,8 @@ HA_BACKUP_SHARE=sharedFolder
 # input (/dev/cec0, vc4-hdmi-0); the other one is HDMI1 (/dev/cec1, vc4-hdmi-1).
 CEC_DEVICE=/dev/cec1
 CEC_INPUT=vc4-hdmi-1
+
+# The Pi's own Wi-Fi for phones (modules/ap): its name, or empty for none. It takes the Pi's
+# Wi-Fi card (wlan0), so the Pi itself must be on Ethernet. The password is generated and kept
+# in ~/.config/couchpie/ap-password; the "Controle Remoto" tile shows it as a QR code.
+AP_SSID=

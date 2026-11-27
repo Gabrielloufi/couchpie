@@ -77,16 +77,23 @@ launch: @HOME@/.local/bin/kiosk run browser
 description: Chromium em tela cheia. As setas pulam entre links, OK abre, Voltar volta para a página anterior, azul abre o teclado e vermelho fecha.
 assets.boxFront: /usr/share/icons/hicolor/256x256/apps/chromium.png
 
+game: Controle Remoto
+file: kiosk:remote
+sort-by: 10
+launch: @HOME@/.local/bin/kiosk run remote
+description: Mostra os QR codes para usar o celular como controle remoto: o primeiro entra no Wi-Fi do couchPie sem digitar senha, o segundo abre o controle, com voz para a PiPA. O botão vermelho fecha.
+assets.boxFront: media/remote.png
+
 game: Reiniciar
 file: kiosk:reboot
-sort-by: 10
+sort-by: 11
 launch: @HOME@/.local/bin/kiosk run reboot
 description: Reinicia o Raspberry Pi. Pede confirmação antes.
 assets.boxFront: media/reboot.png
 
 game: Modo espera
 file: kiosk:standby
-sort-by: 11
+sort-by: 12
 launch: @HOME@/.local/bin/kiosk run standby
 description: Desliga a TV. O Raspberry Pi continua ligado, para o celular e o PC alcançarem a casa pelo Tailscale. Ligue a TV pelo controle, ou pela página do couchPie no celular.
 assets.boxFront: media/standby.png

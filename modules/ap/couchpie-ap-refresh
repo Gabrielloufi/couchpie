@@ -1,0 +1,50 @@
+#!/bin/sh
+# What the Pi's own Wi-Fi (the couchpie-ap access point) gives the phones on it:
+#  - names: couchpie.lan and the Pi's tailnet name point to the Pi, so a phone on this Wi-Fi opens
+#    https://<pi>.<tailnet>.ts.net:8446/ (the phone remote) without Tailscale;
+#  - that name's HTTPS certificate (Tailscale's, from Let's Encrypt), copied where the phone
+#    remote reads it;
+#  - the sign-in prompt: the phones' internet checks point to the Pi too, and the phone remote
+#    answers them ("sign in here") until the phone taps "Pronto" (modules/phone).
+# Run as root, by couchpie-ap-refresh.timer (at boot and daily: Tailscale renews the certificate
+# when it nears its end) and by the dispatcher when the access point comes up. Settings, in
+# /etc/default/couchpie-ap, all optional: AP_ADDRESS (10.42.0.1), AP_PORTAL (1; 0 = no prompt),
+# AP_GROUP (the group that may read the key: the desktop user's).
+set -eu
+AP_ADDRESS=${AP_ADDRESS:-10.42.0.1}
+AP_PORTAL=${AP_PORTAL:-1}
+AP_GROUP=${AP_GROUP:-@GID@}
+TLS=/etc/couchpie/tls
+HOSTS=/etc/couchpie/ap-hosts
+# The addresses phones and computers fetch to see whether a network reaches the internet
+PROBES="connectivitycheck.gstatic.com connectivitycheck.android.com clients3.google.com
+captive.apple.com detectportal.firefox.com www.msftconnecttest.com nmcheck.gnome.org
+connectivity-check.ubuntu.com"
+
+mkdir -p "$TLS"
+name=$(tailscale status --json 2>/dev/null |
+    python3 -I -c 'import json, sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' 2>/dev/null) || name=""
+if [ -n "$name" ] && tailscale cert --cert-file "$TLS/phone.crt.new" --key-file "$TLS/phone.key.new" "$name" > /dev/null 2>&1; then
+    chgrp "$AP_GROUP" "$TLS/phone.key.new"
+    chmod 640 "$TLS/phone.key.new"
+    chmod 644 "$TLS/phone.crt.new"
+    for f in crt key; do  # replaced only when renewed, so the remote reloads only then
+        if cmp -s "$TLS/phone.$f.new" "$TLS/phone.$f"; then rm "$TLS/phone.$f.new"; else mv "$TLS/phone.$f.new" "$TLS/phone.$f"; fi
+    done
+else
+    echo "no certificate: Tailscale isn't up, or HTTPS certificates are off for the tailnet" >&2
+    rm -f "$TLS"/phone.*.new
+fi
+
+new=$(mktemp)
+echo "$AP_ADDRESS couchpie.lan${name:+ $name}" > "$new"
+if [ "$AP_PORTAL" = 1 ]; then
+    for host in $PROBES; do echo "$AP_ADDRESS $host"; done >> "$new"
+fi
+if cmp -s "$new" "$HOSTS"; then
+    rm "$new"
+else
+    install -m 644 "$new" "$HOSTS" && rm "$new"
+    # NetworkManager's dnsmasq for the access point rereads its hosts files on SIGHUP
+    pkill -HUP -f '^/usr/sbin/dnsmasq .*dnsmasq-shared\.d' || true
+fi
