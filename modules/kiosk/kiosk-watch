@@ -1,0 +1,243 @@
+#!/usr/bin/python3 -I
+"""Put a title on the TV: open the streaming app, search for the title, and play it.
+
+  kiosk-watch [--dry-run] [--profile NAME] netflix "A Diplomata"
+      prints JSON: {"ok": true, "title": "...", "url": "...", "profile": "..."}
+      or {"ok": false, "needs_profile": true, "profiles": [...]} when no profile was given
+      or {"ok": false, "error": "..."}; --dry-run finds the title without playing it
+
+Netflix only for now. The Netflix tile's browser runs with a DevTools port on 127.0.0.1:9231
+(see kiosk); this drives it: the profile, the search page, its first result, then
+/watch/<id>, which for a series resumes where that profile stopped.
+
+The profile is never guessed: the account is shared, and a wrong one would mix up someone
+else's "continue watching". Names match without case or accents. The profiles' ids are kept in
+~/.local/state/kiosk/netflix-profiles.json from the last "who's watching" screen, so a profile
+can be switched to even when that screen isn't showing.
+"""
+
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+import unicodedata
+import urllib.parse
+import urllib.request
+
+import websocket  # python3-websocket (websocket-client)
+
+KIOSK = os.path.expanduser("~/.local/bin/kiosk")
+PROFILES = os.path.expanduser("~/.local/share/kiosk")
+PORT = 9231
+STATE = os.path.expanduser("~/.local/state/kiosk/netflix-profiles.json")
+
+READ_GATE_JS = """(() => [...document.querySelectorAll('[data-uia^="profile-selector+tile-"]')]
+  .map(e => [e.innerText.trim(), e.getAttribute("data-uia").split("tile-")[1]]))()"""
+
+CLICK_TILE_JS = """(() => {
+  const tile = document.querySelector('[data-uia="profile-selector+tile-' + %s + '"]');
+  if (tile) tile.click();
+  return !!tile;
+})()"""
+
+# The search page's result cards, in relevance order: links like /search?q=...&jbv=<video id>
+# with the title's name as aria-label. (Other links on the page, such as the notifications
+# menu's, aren't search results.)
+RESULTS_JS = """(() => [...document.querySelectorAll('[data-uia="search-page"] [data-uia="standard-card"]')]
+  .map(card => [new URL(card.getAttribute("href") || "", location.href).searchParams.get("jbv"),
+                card.getAttribute("aria-label") || (card.querySelector("img") || {}).alt || ""])
+  .filter(([id, name]) => id && name))()"""
+
+
+class Page:
+    """A minimal Chrome DevTools Protocol client for one page."""
+
+    def __init__(self, ws_url):
+        self.ws = websocket.create_connection(ws_url, timeout=15, suppress_origin=True)
+        self.n = 0
+
+    def call(self, method, **params):
+        self.n += 1
+        self.ws.send(json.dumps({"id": self.n, "method": method, "params": params}))
+        while True:
+            msg = json.loads(self.ws.recv())
+            if msg.get("id") == self.n:
+                if "error" in msg:
+                    raise RuntimeError(f"{method}: {msg['error'].get('message')}")
+                return msg.get("result", {})
+
+    def js(self, expression):
+        result = self.call("Runtime.evaluate", expression=expression, returnByValue=True)
+        return result.get("result", {}).get("value")
+
+    def go(self, url):
+        self.call("Page.navigate", url=url)
+
+
+def devtools_pages():
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json", timeout=2) as reply:
+            return [t for t in json.load(reply) if t.get("type") == "page"]
+    except OSError:
+        return None
+
+
+def wait(check, timeout, step=0.5):
+    end = time.time() + timeout
+    while time.time() < end:
+        value = check()
+        if value:
+            return value
+        time.sleep(step)
+    return None
+
+
+def open_netflix():
+    """Netflix in front, with its DevTools port; returns its page."""
+    if devtools_pages() is None:
+        # Open without the port (started by an older kiosk): close it so it reopens with it
+        subprocess.run(["pkill", "-f", f"^/usr/lib/chromium/chromium .*--user-data-dir={PROFILES}/netflix( |$)"])
+        time.sleep(1)
+    subprocess.run([KIOSK, "run", "netflix"], check=False)
+    pages = wait(devtools_pages, 40)
+    if not pages:
+        raise RuntimeError("Netflix didn't open (no DevTools port on 127.0.0.1:%d)" % PORT)
+    page = next((p for p in pages if "netflix.com" in p.get("url", "")), pages[0])
+    return Page(page["webSocketDebuggerUrl"])
+
+
+def norm(name):
+    return "".join(c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c)).casefold().strip()
+
+
+def known_profiles():
+    try:
+        with open(STATE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def read_gate(page):
+    """The "who's watching" screen's profiles as {name: id}, saved for later; {} if not showing."""
+    profiles = {name: pid for name, pid in (page.js(READ_GATE_JS) or []) if name and pid}
+    if profiles:
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        with open(STATE, "w") as f:
+            json.dump(profiles, f, ensure_ascii=False)
+    return profiles
+
+
+def choose_profile(page, wanted):
+    """Switch to the profile named WANTED. Returns its display name, or raises with the list."""
+    gate = wait(lambda: read_gate(page), 6, 1) or {}
+    profiles = gate or known_profiles()
+    match = next((name for name in profiles if norm(name) == norm(wanted or "")), None)
+    if not match:
+        raise LookupError(sorted(profiles))
+    if gate:
+        page.js(CLICK_TILE_JS % json.dumps(profiles[match]))
+    else:
+        page.go("https://www.netflix.com/SwitchProfile?tkn=" + profiles[match])
+        time.sleep(3)
+        if read_gate(page):  # Netflix showed the screen anyway: pick on it
+            page.js(CLICK_TILE_JS % json.dumps(profiles[match]))
+    time.sleep(3)
+    return match
+
+
+def best_match(title, results):
+    """The result whose name best matches the title, or None. Results are (id, name) in the
+    page's relevance order; a tie goes to the earlier one."""
+    want = norm(title)
+    words = set(want.split())
+    def score(name):
+        have = norm(name)
+        if have == want:
+            return 3
+        if want in have or have in want:
+            return 2
+        return len(words & set(have.split())) / max(len(words), 1)
+    scored = [(score(name), -i, href, name) for i, (href, name) in enumerate(results)]
+    best = max(scored, default=None)
+    return (best[2], best[3]) if best and best[0] >= 0.5 else None
+
+
+def hide_keyboard(page):
+    """The search page focuses its search box, which opens couchPie's on-screen keyboard:
+    take the focus away and ask cec-remote to close the keyboard (only if it is open)."""
+    page.js("document.activeElement && document.activeElement.blur()")
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as remote:
+            remote.settimeout(2)
+            remote.connect("/run/cec-remote.sock")
+            remote.sendall(b'{"keyboard_hide": true}\n')
+    except OSError:
+        pass
+
+
+def watch_netflix(title, profile, dry_run=False):
+    known = known_profiles()
+    if not profile and known:  # ask first: don't touch the TV until we know whose profile
+        names = sorted(known)
+        return {"ok": False, "needs_profile": True, "profiles": names,
+                "error": "which Netflix profile? " + ", ".join(names)}
+    page = open_netflix()
+    page.go("https://www.netflix.com/browse")
+    time.sleep(3)
+    try:
+        profile = choose_profile(page, profile)
+    except LookupError as err:
+        names = err.args[0]
+        return {"ok": False, "needs_profile": True, "profiles": names,
+                "error": "which Netflix profile? " + ", ".join(names) if names else
+                         "which Netflix profile? (the list isn't known yet)"}
+    search = "https://www.netflix.com/search?q=" + urllib.parse.quote(title)
+    page.go(search)
+    # Wait for the new search page itself: right after navigating, the old page's links
+    # (a previous search) can still be there.
+    wait(lambda: page.js("location.href") == search and page.js("document.readyState") == "complete", 15)
+    time.sleep(2)
+    results = wait(lambda: page.js(RESULTS_JS), 10, 1) or []
+    hide_keyboard(page)
+    match = best_match(title, results)
+    if not match:
+        seen = list(dict.fromkeys(name for _, name in results))[:8]
+        return {"ok": False, "profile": profile, "results": seen,
+                "error": f"nothing on Netflix matches '{title}'" + (f"; it found: {', '.join(seen)}" if seen else "")}
+    video_id, name = match
+    url = f"https://www.netflix.com/watch/{video_id}"
+    result = {"ok": True, "title": name, "url": url, "profile": profile}
+    if dry_run:
+        result["dry_run"] = True
+        return result
+    page.go(url)
+    hide_keyboard(page)
+    if not wait(lambda: page.js("!!document.querySelector('video')"), 25, 1):
+        result.update(ok=False, error="the player didn't start (Netflix may be asking something on screen)")
+    return result
+
+
+def main():
+    args, dry_run, profile = sys.argv[1:], False, ""
+    while args and args[0].startswith("--"):
+        flag = args.pop(0)
+        if flag == "--dry-run":
+            dry_run = True
+        elif flag == "--profile" and args:
+            profile = args.pop(0)
+    if len(args) != 2 or args[0] != "netflix":
+        print(json.dumps({"ok": False, "error": "usage: kiosk-watch [--dry-run] [--profile NAME] netflix TITLE"}))
+        return 2
+    try:
+        result = watch_netflix(args[1].strip(), profile, dry_run)
+    except Exception as err:  # report anything as JSON for the caller
+        result = {"ok": False, "error": str(err)}
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result.get("ok") else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

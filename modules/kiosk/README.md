@@ -67,3 +67,27 @@ doesn't do, then closes Moonlight. With the PC side set up (see
 3. For a website, add a binding for its raise key to `labwc-rc.xml`, matching
    `chromium (*/kiosk/<id>)`. Unused keys: `XF86LaunchB` to `XF86LaunchF`.
 4. Optionally a logo: see `../pegasus/menu/logos/`.
+
+## Playing a title: `kiosk-watch`
+
+`kiosk-watch [--profile NAME] netflix "A Diplomata"` puts a Netflix title on the TV. PiPA's
+`tv_assistir` tool uses it.
+- **How:** the Netflix tile's browser runs with a DevTools port on 127.0.0.1:9231, which only
+  this machine can reach. kiosk-watch:
+  1. chooses the profile;
+  2. searches;
+  3. reads the search page's result cards (their `jbv` ids, in relevance order);
+  4. plays the best name match at `/watch/<id>`. A series resumes where that profile stopped.
+- **The profile is never guessed,** because a Netflix account is shared.
+  - Without `--profile`, it answers with the profiles' names and touches nothing on the TV.
+  - Names match without case or accents.
+  - The profiles' ids come from the "who's watching" screen and are kept in
+    `~/.local/state/kiosk/netflix-profiles.json`, so switching works even when that screen
+    isn't showing.
+- **The on-screen keyboard:** the search box takes the focus, and that opens couchPie's
+  keyboard. kiosk-watch then blurs it and sends `{"keyboard_hide": true}` to `cec-remote`,
+  which closes the keyboard only if it is open.
+- **`--dry-run`** finds the title without playing it.
+- It prints JSON: `ok`, `title`, `url`, `profile`, or `needs_profile` with `profiles`, or an
+  `error`.
+
