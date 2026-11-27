@@ -18,7 +18,8 @@ the Pi: a media center, games, Home Assistant, a personal assistant.
 | [streaming](streaming/) | Ending a Moonlight stream closes the game and Steam Big Picture on the PC. | `C:\ProgramData\couchpie\` on the PC |
 | [smb](smb/) | The PC's shared folders, mounted on demand; and the Windows side. | `/etc/systemd/system/`, `/etc/cifs-creds` |
 | [homeassistant](homeassistant/) | Optional: Home Assistant in Docker on the same Pi, with backups copied to the PC and a touch panel next to the TV. The house's own configuration lives in a repository of its own. | `/srv/homeassistant/`, `/etc/docker/`, `/etc/systemd/system/` |
-| [phone](phone/) | The phone as the TV's remote: buttons, apps, TV power, and a gyroscope pointer. | `~/.local/bin/`, `~/.config/systemd/user/` |
+| [ap](ap/) | The Pi's own Wi-Fi for phones (optional): QR join, HTTPS without Tailscale on the phone, a sign-in prompt that opens the remote. | `/usr/local/sbin/`, `/etc/systemd/system/`, `/etc/NetworkManager/` |
+| [phone](phone/) | The phone as the TV's remote: buttons, apps, TV power, a gyroscope pointer, and voice for PiPA. | `~/.local/bin/`, `~/.config/systemd/user/` |
 | [wake](wake/) | Wakes the PC (Wake-on-LAN), and turns the TV on or off, from the remote or from a page on the tailnet. | `~/.local/bin/`, `~/.config/systemd/user/` |
 
 The voice assistant's GPU work on the PC (Whisper, a voice, a language model) and

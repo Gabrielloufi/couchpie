@@ -95,5 +95,11 @@
         <then><action name="Focus"/><action name="Raise"/></then>
       </action>
     </keybind>
+    <keybind key="XF86LaunchB">
+      <action name="ForEach">
+        <query identifier="chromium (*/kiosk/remote)"/>
+        <then><action name="Focus"/><action name="Raise"/></then>
+      </action>
+    </keybind>
   </keyboard>
 </openbox_config>

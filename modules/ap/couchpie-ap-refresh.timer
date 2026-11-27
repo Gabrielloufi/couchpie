@@ -1,0 +1,10 @@
+[Unit]
+Description=couchPie Wi-Fi: renew the phone remote's HTTPS certificate when needed
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1d
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

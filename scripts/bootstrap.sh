@@ -62,8 +62,8 @@ kodi_running() { pgrep -x kodi.bin > /dev/null; }
 step "Packages"
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
-    kodi chromium libwidevinecdm0 cifs-utils v4l-utils wtype \
-    python3-evdev python3-gi python3-pil gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1
+    kodi chromium libwidevinecdm0 cifs-utils v4l-utils wtype qrencode iw \
+    python3-evdev python3-gi python3-pil python3-websocket gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1
 if ! dpkg -s moonlight-qt > /dev/null 2>&1; then
     NOTES+=("Moonlight isn't installed: add its apt repository as described in docs/en/install.md, then run this again.")
 fi
@@ -100,6 +100,7 @@ fi
 step "Kiosk"
 install_template "$M/kiosk/kiosk" "$HOME/.local/bin/kiosk" 755
 install_template "$M/kiosk/kiosk-confirm" "$HOME/.local/bin/kiosk-confirm" 755
+install_template "$M/kiosk/kiosk-watch" "$HOME/.local/bin/kiosk-watch" 755
 install_template "$M/remote/remote-keyboard" "$HOME/.local/bin/remote-keyboard" 755
 install_template "$M/kiosk/pegasus.desktop" "$HOME/.local/share/applications/pegasus.desktop"
 install_template "$M/kiosk/pegasus.desktop" "$(xdg-user-dir DESKTOP)/pegasus.desktop" 755
@@ -204,6 +205,53 @@ if command -v tailscale > /dev/null && sudo tailscale serve --bg http://127.0.0.
     NOTES+=("Wake page: open https://$host/ on the phone (with Tailscale on) and add it to the home screen.")
 else
     NOTES+=("The wake page isn't on the tailnet: set up Tailscale with HTTPS certificates on, then run this again.")
+fi
+
+
+step "Phone remote"
+install_template "$M/phone/phone-remote" "$HOME/.local/bin/phone-remote" 755
+install_template "$M/phone/phone-remote.service" "$HOME/.config/systemd/user/phone-remote.service"
+systemctl --user daemon-reload
+systemctl --user enable phone-remote
+systemctl --user restart phone-remote
+# HTTPS (for the gyroscope and the microphone) on the tailnet; modules/ap adds the Pi's own Wi-Fi
+if command -v tailscale > /dev/null && sudo tailscale serve --bg --https=8446 http://127.0.0.1:8096 > /dev/null; then
+    host=$(tailscale status --json | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')
+    NOTES+=("Phone remote: http://$(hostname).local:8096 at home; with the pointer and voice, https://$host:8446/ (tailnet, or the Pi's own Wi-Fi).")
+else
+    NOTES+=("Phone remote: http://$(hostname).local:8096 (no HTTPS without Tailscale, so no pointer or voice).")
+fi
+
+
+step "The Pi's own Wi-Fi (optional)"
+if [ -z "${AP_SSID:-}" ]; then
+    echo "Off: AP_SSID is empty in couchpie.conf."
+else
+    M_AP="$M/ap"
+    password="$HOME/.config/couchpie/ap-password"
+    if [ ! -s "$password" ]; then  # random, as nobody types it: the TV shows it as a QR code
+        mkdir -p "${password%/*}"
+        (umask 077; python3 -I -c 'import secrets; a = "abcdefghjkmnpqrstuvwxyz23456789"
+print("-".join("".join(secrets.choice(a) for _ in range(4)) for _ in range(4)))' > "$password")
+    fi
+    if ! nmcli -t -f NAME connection show | grep -qx couchpie-ap; then
+        sudo nmcli connection add type wifi ifname wlan0 con-name couchpie-ap autoconnect yes ssid "$AP_SSID" \
+            802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared ipv6.method disabled \
+            wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.psk "$(cat "$password")" > /dev/null
+    fi
+    install_system "$M_AP/couchpie-ap-refresh" /usr/local/sbin/couchpie-ap-refresh 755
+    install_system "$M_AP/couchpie-ap-refresh.service" /etc/systemd/system/couchpie-ap-refresh.service
+    install_system "$M_AP/couchpie-ap-refresh.timer" /etc/systemd/system/couchpie-ap-refresh.timer
+    install_system "$M_AP/90-couchpie-ap" /etc/NetworkManager/dispatcher.d/90-couchpie-ap 755
+    install_system "$M_AP/dnsmasq-couchpie.conf" /etc/NetworkManager/dnsmasq-shared.d/couchpie.conf
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now couchpie-ap-refresh.timer
+    sudo systemctl start couchpie-ap-refresh.service
+    if sudo nmcli connection up couchpie-ap > /dev/null; then
+        NOTES+=("Wi-Fi $AP_SSID: phones join from the QR code on the \"Controle Remoto\" tile.")
+    else
+        NOTES+=("The Wi-Fi $AP_SSID didn't come up. Is the Pi on Ethernet? See modules/ap/README.md.")
+    fi
 fi
 
 

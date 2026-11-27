@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
-"""The phone as the TV's remote: a page with the remote's buttons, the home screen's apps, and
-the TV's power. Phones on the Pi's own Wi-Fi, the home network or the tailnet open
-http://<pi>:8096/.
+"""The phone as the TV's remote: a page with the remote's buttons, the home screen's apps, the
+TV's power, and a voice assistant (PiPA). Phones on the Pi's own Wi-Fi, the home network or the
+tailnet open http://<pi>:8096/.
 
   GET  /                   the page
   GET  /apps               the home screen's apps: [{"id", "name", "logo"}]
@@ -12,15 +12,50 @@ http://<pi>:8096/.
   POST /app/<id>           open an app on the TV (kiosk run <id>)
   GET  /ws                 WebSocket for the pointer: {"m": [dx, dy]}, {"c": "left"|"right"},
                            {"s": n}, passed on to cec-remote's virtual mouse
+  GET  /assistant          {"name", "available"}: whether the voice assistant answers
+  POST /assistant/voice    audio recorded on the phone -> {"heard", "answer"}
+  POST /assistant/text     {"text"} -> {"heard", "answer"}
+  POST /assistant/speak    {"text"} -> the answer spoken (WAV)
+  POST /portal/done        the phone on the Pi's Wi-Fi is done with the sign-in page
+  GET  /tv                 for the TV only (the "Controle Remoto" tile): QR codes that join the
+                           Pi's Wi-Fi and open the remote. Served to the Pi itself only, so the
+                           Wi-Fi password never leaves it.
 
-The pointer uses the phone's gyroscope, which browsers only allow on HTTPS pages: open it
-through `tailscale serve` (https://<pi>.<tailnet>.ts.net:8446/).
+HTTPS. Browsers only give the gyroscope and the microphone to HTTPS pages.
+- On the tailnet: `tailscale serve` publishes the remote at https://<pi>.<tailnet>.ts.net:8446/.
+- On the Pi's own Wi-Fi (modules/ap), without Tailscale: the access point's DNS points that same
+  name to the Pi, and this program serves HTTPS on the access point's address, port 8446, with
+  Tailscale's certificate for the name (copied by couchpie-ap-refresh). It reloads the
+  certificate when renewed.
+
+The sign-in prompt (captive portal). The access point's DNS sends the phones' internet checks
+here (port 80 is redirected to this one). Until a phone taps "Pronto" on the page, its checks
+are answered with a redirect to the remote, so the phone shows "sign in to the network", and
+that opens the remote. After "Pronto" they're answered as the internet would, until the phone
+leaves the Wi-Fi.
+
+The voice assistant. The page records the phone's microphone; this program asks the assistant
+through OpenAI-style endpoints: speech to text, the chat, text to speech. The defaults are PiPA's,
+on the same Pi (pipa-assistant: pipa-stt and pipa-bridge). The section shows only when the chat
+endpoint answers. Each phone gets its own conversation.
 
 It answers only private addresses (the Pi's access point, the home network, the tailnet),
 never the internet. Settings, all optional:
-  PHONE_REMOTE_PORT        8096
-  PHONE_REMOTE_HOME_URL    the "Casa" button's link; default: Home Assistant on the same host,
-                           port 8123
+  PHONE_REMOTE_PORT            8096
+  PHONE_REMOTE_HOME_URL        the "Casa" button's link; default: Home Assistant on the same
+                               host, port 8123
+  PHONE_REMOTE_AP_ADDRESS      the access point's address, for HTTPS and the sign-in page
+                               (10.42.0.1)
+  PHONE_REMOTE_AP_INTERFACE    its Wi-Fi interface (wlan0)
+  PHONE_REMOTE_AP_CONNECTION   its NetworkManager connection, for the Wi-Fi's name (couchpie-ap)
+  PHONE_REMOTE_AP_PASSWORD     the file with its password (~/.config/couchpie/ap-password)
+  PHONE_REMOTE_TLS_PORT        8446
+  PHONE_REMOTE_TLS_CERT/_KEY   /etc/couchpie/tls/phone.crt and .key
+  PHONE_REMOTE_ASSISTANT       the assistant's name on the page (PiPA)
+  PHONE_REMOTE_CHAT_URL        OpenAI-style chat API (http://127.0.0.1:8901/v1, PiPA's bridge;
+                               empty = no assistant)
+  PHONE_REMOTE_STT_URL         speech to text (http://127.0.0.1:8904/v1, pipa-stt)
+  PHONE_REMOTE_TTS_URL         text to speech (the same; empty = the phone's own voice)
 """
 
 import base64
@@ -29,8 +64,15 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import socket
+import ssl
 import subprocess
+import threading
+import time
+import urllib.error
+import urllib.request
+import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -54,8 +96,33 @@ if not TAILNET_HOST:
         pass
 # Home screen tiles the phone doesn't offer: a stray tap shouldn't restart the Pi, and the TV's
 # power has its own buttons. The streaming services come first.
-LEFT_OUT = {"reboot", "standby"}
+LEFT_OUT = {"reboot", "standby", "remote"}
 FIRST = ["netflix", "youtube", "primevideo", "disney", "hbomax", "globoplay", "paramount", "kodi"]
+
+AP_ADDRESS = os.environ.get("PHONE_REMOTE_AP_ADDRESS", "10.42.0.1")
+AP_INTERFACE = os.environ.get("PHONE_REMOTE_AP_INTERFACE", "wlan0")
+AP_CONNECTION = os.environ.get("PHONE_REMOTE_AP_CONNECTION", "couchpie-ap")
+AP_PASSWORD = Path(os.environ.get("PHONE_REMOTE_AP_PASSWORD", Path.home() / ".config/couchpie/ap-password"))
+TLS_PORT = int(os.environ.get("PHONE_REMOTE_TLS_PORT", "8446"))
+TLS_CERT = os.environ.get("PHONE_REMOTE_TLS_CERT", "/etc/couchpie/tls/phone.crt")
+TLS_KEY = os.environ.get("PHONE_REMOTE_TLS_KEY", "/etc/couchpie/tls/phone.key")
+
+ASSISTANT = os.environ.get("PHONE_REMOTE_ASSISTANT", "PiPA")
+CHAT_URL = os.environ.get("PHONE_REMOTE_CHAT_URL", "http://127.0.0.1:8901/v1").rstrip("/")
+STT_URL = os.environ.get("PHONE_REMOTE_STT_URL", "http://127.0.0.1:8904/v1").rstrip("/")
+TTS_URL = os.environ.get("PHONE_REMOTE_TTS_URL", STT_URL).rstrip("/")
+MAX_AUDIO = 10 * 1024 * 1024
+
+# The phones' and computers' internet checks, and what the internet answers them. Until a phone
+# is done with the sign-in page, it gets a redirect to the remote instead.
+APPLE_OK = "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
+PROBES = {
+    "connectivitycheck.gstatic.com": None, "connectivitycheck.android.com": None,
+    "clients3.google.com": None, "connectivity-check.ubuntu.com": None,  # None: 204 No Content
+    "captive.apple.com": APPLE_OK, "detectportal.firefox.com": "success\n",
+    "www.msftconnecttest.com": "Microsoft Connect Test", "nmcheck.gnome.org": "NetworkManager is online\n",
+}
+signed_in = {}  # the phones done with the sign-in page: MAC (or IP) -> when
 
 
 def menu_apps():
@@ -96,6 +163,144 @@ def cec(message):
         sock.settimeout(2)
         sock.connect(CEC_SOCKET)
         sock.sendall((json.dumps(message) + "\n").encode())
+
+
+def client_mac(ip):
+    """The MAC address of a client on the local network, from the kernel's ARP table."""
+    try:
+        for line in Path("/proc/net/arp").read_text().splitlines()[1:]:
+            fields = line.split()
+            if len(fields) >= 4 and fields[0] == ip and fields[3] != "00:00:00:00:00:00":
+                return fields[3].lower()
+    except OSError:
+        pass
+    return None
+
+
+def forget_departed():
+    """A phone that leaves the Wi-Fi gets the sign-in prompt again when it comes back."""
+    iw = shutil.which("iw") or "/usr/sbin/iw"
+    while True:
+        time.sleep(30)
+        try:
+            dump = subprocess.run([iw, "dev", AP_INTERFACE, "station", "dump"], capture_output=True,
+                                  text=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if dump.returncode:
+            continue
+        here = set(re.findall(r"^Station ([0-9a-f:]{17})", dump.stdout, re.M))
+        for key, since in list(signed_in.items()):
+            if (":" in key and key not in here) or time.time() - since > 24 * 3600:
+                signed_in.pop(key, None)
+
+
+def wifi_qr_text():
+    """The Wi-Fi's name and password in the QR format phone cameras join from; None if unknown."""
+    try:
+        ssid = subprocess.run(["nmcli", "-g", "802-11-wireless.ssid", "connection", "show", AP_CONNECTION],
+                              capture_output=True, text=True, timeout=5).stdout.strip()
+        password = AP_PASSWORD.read_text().strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if not ssid or not password:
+        return None
+    escape = lambda s: re.sub(r'([\\;,:"])', r"\\\1", s)
+    return f"WIFI:T:WPA;S:{escape(ssid)};P:{escape(password)};;", ssid
+
+
+def qr_svg(text):
+    run = subprocess.run(["qrencode", "-t", "SVG", "-m", "2", "-l", "M", "-o", "-", text],
+                         capture_output=True, timeout=10)
+    if run.returncode:
+        raise OSError(run.stderr.decode(errors="replace").strip() or "qrencode failed")
+    svg = run.stdout.decode()
+    return svg[svg.index("<svg"):]  # without the XML declaration, to inline it
+
+
+TV_PAGE = """<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Controle remoto</title>
+<style>
+  html, body { overflow: hidden; }
+  body { margin: 0; height: 100vh; background: #1e1e22; color: #f2f2f5; font: 3.6vh system-ui, sans-serif;
+         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4vh; cursor: none; }
+  h1 { margin: 0; font-size: 6vh; }
+  .steps { display: flex; gap: 7vw; align-items: flex-end; }
+  figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2.5vh; }
+  .qr { background: #fff; border-radius: 2.5vh; padding: 1.8vh; line-height: 0; }
+  .qr svg { width: 100%; height: 100%; }
+  .wifi .qr { width: 52vh; height: 52vh; } .link .qr { width: 33vh; height: 33vh; }
+  figcaption { text-align: center; width: 36vw; line-height: 1.3; }
+  b { color: #7fb8ff; } small { color: #a0a0aa; font-size: 2.8vh; }
+</style></head><body>
+<h1>Controle remoto no celular</h1>
+<div class="steps">
+  <figure class="wifi"><div class="qr">__WIFI_QR__</div>
+    <figcaption><b>1.</b> Aponte a câmera do celular para entrar no Wi-Fi <b>__SSID__</b>, sem digitar senha</figcaption></figure>
+  <figure class="link"><div class="qr">__LINK_QR__</div>
+    <figcaption><b>2.</b> Depois, este abre o controle com voz e giroscópio<br><small>__LINK__</small></figcaption></figure>
+</div>
+<small>O botão vermelho do controle fecha esta tela.</small>
+</body></html>
+"""
+
+
+def portal_url():
+    if TAILNET_HOST and tls_context():
+        return f"https://{TAILNET_HOST}:{TLS_PORT}/?portal=1"
+    return f"http://{AP_ADDRESS}:{PORT}/?portal=1"
+
+
+_tls = {"mtime": None, "context": None}
+
+
+def tls_context():
+    """The HTTPS context with the current certificate, reloaded when it's renewed; None without one."""
+    try:
+        mtime = max(os.stat(TLS_CERT).st_mtime, os.stat(TLS_KEY).st_mtime)
+        if mtime != _tls["mtime"]:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(TLS_CERT, TLS_KEY)
+            _tls.update(mtime=mtime, context=context)
+    except (OSError, ssl.SSLError):
+        return None
+    return _tls["context"]
+
+
+def api(url, payload=None, data=None, kind=None, timeout=120):
+    """POST to an assistant endpoint (JSON PAYLOAD, or DATA of type KIND); the reply's bytes."""
+    if payload is not None:
+        data, kind = json.dumps(payload).encode(), "application/json"
+    request = urllib.request.Request(url, data, {"Content-Type": kind} if kind else {})
+    with urllib.request.urlopen(request, timeout=timeout) as reply:
+        return reply.read()
+
+
+def multipart(fields, filename, kind, audio):
+    boundary = uuid.uuid4().hex
+    parts = [f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
+             for name, value in fields.items()]
+    parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+                 f'Content-Type: {kind}\r\n\r\n'.encode() + audio + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def assistant_available():
+    if not CHAT_URL:
+        return False
+    try:
+        with urllib.request.urlopen(CHAT_URL + "/models", timeout=3) as reply:
+            return reply.status == 200
+    except (OSError, ValueError):
+        return False
+
+
+def ask_assistant(text, phone):
+    session = "celular-" + re.sub(r"[^0-9a-zA-Z.]", "", phone)  # one conversation per phone
+    body = {"model": "pipa", "user": session, "messages": [{"role": "user", "content": text}]}
+    reply = json.loads(api(CHAT_URL + "/chat/completions", body, timeout=300))
+    return (reply["choices"][0]["message"].get("content") or "").strip()
 
 
 PAGE = """<!doctype html>
@@ -143,6 +348,21 @@ PAGE = """<!doctype html>
          margin-bottom: 10px; touch-action: none; font-weight: 600; }
   #pad.active { filter: brightness(1.25); }
   #status { min-height: 20px; color: var(--muted); font-size: 13px; text-align: center; margin-top: 10px; }
+  #portal { background: var(--card); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
+  #portal p { margin: 0 0 10px; }
+  #portal button { width: 100%; background: var(--green); color: #fff; font-weight: 600; }
+  #talk { background: var(--ok); color: var(--okt); font-weight: 600; font-size: 18px; }
+  #talk.rec { background: var(--red); color: #fff; }
+  #talk:disabled { opacity: 0.6; }
+  .ask { display: flex; gap: 8px; margin-bottom: 8px; }
+  .ask input { flex: 1; min-width: 0; font: inherit; padding: 12px; border-radius: 14px; border: 0;
+               background: var(--card); color: var(--text); user-select: text; -webkit-user-select: text; }
+  #chat { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  #chat p { margin: 0; padding: 8px 12px; border-radius: 14px; font-size: 15px; max-width: 88%;
+            user-select: text; -webkit-user-select: text; }
+  #chat .me { align-self: flex-end; background: var(--key); }
+  #chat .ai { align-self: flex-start; background: var(--card); }
+  #chat .wait { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -154,6 +374,11 @@ PAGE = """<!doctype html>
       <button data-post="/tv/standby" title="Desligar a TV">TV ⏾</button>
     </div>
   </header>
+  <div id="portal" hidden>
+    <p id="portal-text">📶 Wi-Fi do couchPie: use o controle aqui mesmo. Quando quiser a internet neste
+      celular, toque em Pronto.</p>
+    <button id="portal-done">Pronto</button>
+  </div>
   <div class="pad">
     <span></span><button data-button="up" data-repeat>▲</button><span></span>
     <button data-button="left" data-repeat>◀</button>
@@ -167,6 +392,14 @@ PAGE = """<!doctype html>
     <button class="close" data-button="close">Fechar</button>
     <button class="kbd" data-button="keyboard">Teclado</button>
   </div>
+  <section id="assistant" hidden>
+    <h2 id="assistant-name"></h2>
+    <button id="talk" class="wide">🎤 Falar</button>
+    <form class="ask" id="ask"><input id="ask-text" enterkeyhint="send" autocomplete="off"
+      placeholder="ou escreva aqui…"><button>Enviar</button></form>
+    <p class="hint" id="talk-hint"></p>
+    <div id="chat"></div>
+  </section>
   <h2>Apontar</h2>
   <div id="pointer-off"><button id="pointer-start" class="wide">🎯 Apontar com o celular</button>
     <p class="hint" id="pointer-hint"></p></div>
@@ -261,8 +494,7 @@ function flush() {
 }
 $("pointer-start").addEventListener("click", async () => {
   if (!window.isSecureContext) {
-    $("pointer-hint").innerHTML = 'O giroscópio só funciona em HTTPS. Abra pela tailnet: <a href="https://' +
-      "__TAILNET_HOST__" + ':8446/">https://__TAILNET_HOST__:8446</a>';
+    $("pointer-hint").innerHTML = "O giroscópio só funciona em HTTPS. " + HTTPS_LINK;
     return;
   }
   if (typeof DeviceMotionEvent !== "undefined" && DeviceMotionEvent.requestPermission) {
@@ -289,6 +521,99 @@ $("click-l").addEventListener("click", () => send({c: "left"}));
 $("click-r").addEventListener("click", () => send({c: "right"}));
 $("scroll-u").addEventListener("click", () => send({s: 3}));
 $("scroll-d").addEventListener("click", () => send({s: -3}));
+// HTTPS: on the tailnet, or on the Pi's own Wi-Fi (same address)
+const HTTPS_URL = "__HTTPS_URL__";
+const HTTPS_LINK = HTTPS_URL ? 'Abra por aqui: <a href="' + HTTPS_URL + '">' + HTTPS_URL.replace("https://", "") + "</a>" : "";
+// The sign-in page of the Pi's Wi-Fi
+if (new URLSearchParams(location.search).has("portal")) {
+  $("portal").hidden = false;
+  $("portal-done").addEventListener("click", async () => {
+    try { await fetch("/portal/done", {method: "POST"}); } catch (e) {}
+    $("portal-text").innerHTML = "Pronto: a internet está liberada neste celular. Para falar com a " + ASSISTANT +
+      " e apontar com o celular, abra o controle no navegador (esta janela não tem microfone): " +
+      (HTTPS_URL ? '<a href="' + HTTPS_URL + '">' + HTTPS_URL.replace("https://", "") + "</a>, " : "") +
+      "digite <b>couchpie.lan</b> no Chrome ou escaneie o segundo QR da TV.";
+    $("portal-done").hidden = true;
+  });
+}
+// The voice assistant: record, send, show and speak the answer
+const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+const voice = new Audio();
+let rec = null, recLimit = null, unlocked = false;
+function unlockAudio() {  // iPhones only play audio that a tap started: start it on the tap
+  if (unlocked) return; unlocked = true; voice.src = SILENT; voice.play().catch(() => {});
+}
+function bubble(text, who) {
+  const p = document.createElement("p"); p.className = who; p.textContent = text;
+  const chat = $("chat"); chat.prepend(p);
+  while (chat.children.length > 8) chat.lastChild.remove();
+  return p;
+}
+async function speak(text) {
+  try {
+    const r = await fetch("/assistant/speak", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text})});
+    if (!r.ok) throw new Error();
+    voice.src = URL.createObjectURL(await r.blob()); await voice.play();
+  } catch (e) {  // no voice server: the phone's own voice
+    if (!window.speechSynthesis) return;
+    const u = new SpeechSynthesisUtterance(text); u.lang = "pt-BR"; speechSynthesis.speak(u);
+  }
+}
+async function ask(path, body, type) {
+  const wait = bubble("…", "ai wait");
+  $("talk").disabled = true;
+  try {
+    const r = await fetch(path, {method: "POST", headers: {"Content-Type": type}, body});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    if (j.heard && path.endsWith("/voice")) bubble(j.heard, "me");
+    if (!j.heard) { wait.textContent = "Não entendi. Tente de novo, mais perto do celular."; return; }
+    wait.className = "ai"; wait.textContent = j.answer || "(sem resposta)";
+    $("chat").prepend(wait);
+    wait.onclick = () => speak(wait.textContent);
+    if (j.answer) speak(j.answer);
+  } catch (e) {
+    wait.textContent = ASSISTANT + " não respondeu: " + e.message;
+  } finally { $("talk").disabled = false; }
+}
+const ASSISTANT = "__ASSISTANT__";
+fetch("/assistant").then(r => r.json()).then(info => {
+  if (!info.available) return;
+  $("assistant").hidden = false; $("assistant-name").textContent = info.name;
+});
+$("talk").addEventListener("click", async () => {
+  unlockAudio(); voice.pause(); if (window.speechSynthesis) speechSynthesis.cancel();
+  if (rec) { rec.stop(); return; }
+  if (!window.isSecureContext || !navigator.mediaDevices || !window.MediaRecorder) {
+    $("talk-hint").innerHTML = "O microfone só funciona em HTTPS. " + HTTPS_LINK; return;
+  }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}}); }
+  catch (e) { $("talk-hint").textContent = "Sem permissão para o microfone (" + e.name + ")."; return; }
+  $("talk-hint").textContent = "";
+  const chunks = [];
+  rec = new MediaRecorder(stream);
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    stream.getTracks().forEach(track => track.stop()); clearTimeout(recLimit);
+    const type = (rec.mimeType || "audio/webm").split(";")[0];
+    rec = null; $("talk").classList.remove("rec"); $("talk").textContent = "🎤 Falar";
+    const blob = new Blob(chunks, {type});
+    if (blob.size < 1500) { say("Não gravou nada"); return; }
+    ask("/assistant/voice", blob, type);
+  };
+  rec.start();
+  $("talk").classList.add("rec"); $("talk").textContent = "■ Enviar";
+  if (navigator.vibrate) navigator.vibrate(30);
+  recLimit = setTimeout(() => rec && rec.stop(), 30000);
+});
+$("ask").addEventListener("submit", e => {
+  e.preventDefault(); unlockAudio();
+  const text = $("ask-text").value.trim(); if (!text) return;
+  $("ask-text").value = ""; $("ask-text").blur();
+  bubble(text, "me");
+  ask("/assistant/text", JSON.stringify({text}), "application/json");
+});
 const casa = document.getElementById("casa");
 casa.href = "__HOME_URL__" || (location.protocol + "//" + location.hostname + ":8123/");
 </script>
@@ -316,29 +641,70 @@ def read_frame(stream):
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def setup(self):
+        super().setup()
+        if isinstance(self.request, ssl.SSLSocket):  # the handshake here, not in the accepting thread
+            self.request.settimeout(15)
+            self.request.do_handshake()
+            self.request.settimeout(None)
+
     def allowed(self):
         addr = ipaddress.ip_address(self.client_address[0])
         if addr.version == 6 and addr.ipv4_mapped:
             addr = addr.ipv4_mapped
         return addr.is_private or addr.is_loopback or addr in TAILNET
 
-    def reply(self, status, body, kind="text/plain; charset=utf-8"):
+    def reply(self, status, body, kind="text/plain; charset=utf-8", headers=None):
         data = body if isinstance(body, bytes) else body.encode()
         self.send_response(status)
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
+    def phone(self):
+        """The client's key for the sign-in state: its MAC on the Pi's Wi-Fi, else its address."""
+        ip = self.client_address[0].removeprefix("::ffff:")
+        return client_mac(ip) or ip
+
+    def probe(self, host):
+        """A phone checking for the internet: answered as the internet would once it's done with
+        the sign-in page, else sent to the page."""
+        if self.phone() in signed_in:
+            answer = PROBES[host]
+            if answer is None:
+                return self.reply(HTTPStatus.NO_CONTENT, b"")
+            extra = {"X-NetworkManager-Status": "online"} if host == "nmcheck.gnome.org" else {}
+            return self.reply(HTTPStatus.OK, answer, "text/html" if host == "captive.apple.com" else "text/plain", extra)
+        url = portal_url()
+        self.reply(HTTPStatus.FOUND, f'<a href="{url}">couchPie</a>', "text/html; charset=utf-8", {"Location": url})
+
     def do_GET(self):
         if not self.allowed():
             return self.reply(HTTPStatus.FORBIDDEN, "only from the local network")
+        host = (self.headers.get("Host") or "").split(":")[0].lower()
+        if host in PROBES:
+            return self.probe(host)
         if self.path == "/ws" and self.headers.get("Upgrade", "").lower() == "websocket":
             return self.pointer_socket()
-        if self.path in ("/", "/index.html"):
-            page = PAGE.replace("__HOME_URL__", HOME_URL).replace("__TAILNET_HOST__", TAILNET_HOST)
+        path = self.path.split("?")[0]
+        https = f"https://{TAILNET_HOST}:{TLS_PORT}/" if TAILNET_HOST else ""
+        if host == "couchpie.lan" and path == "/" and https and tls_context():
+            return self.reply(HTTPStatus.FOUND, f'<a href="{https}">couchPie</a>', "text/html; charset=utf-8",
+                              {"Location": https})
+        if path == "/tv":
+            return self.tv_page(https)
+        if path in ("/", "/index.html"):
+            page = (PAGE.replace("__HOME_URL__", HOME_URL).replace("__HTTPS_URL__", https)
+                    .replace("__ASSISTANT__", ASSISTANT))
             return self.reply(HTTPStatus.OK, page, "text/html; charset=utf-8")
+        if path == "/assistant":
+            info = {"name": ASSISTANT, "available": assistant_available()}
+            return self.reply(HTTPStatus.OK, json.dumps(info), "application/json")
         if self.path == "/apps":
             apps = [{k: a[k] for k in ("id", "name", "logo")} for a in menu_apps()]
             return self.reply(HTTPStatus.OK, json.dumps(apps, ensure_ascii=False), "application/json")
@@ -354,7 +720,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.allowed():
             return self.reply(HTTPStatus.FORBIDDEN, "only from the local network")
-        parts = self.path.strip("/").split("/")
+        parts = self.path.split("?")[0].strip("/").split("/")
+        if parts[0] == "assistant" and len(parts) == 2:
+            return self.assistant(parts[1])
+        if parts == ["portal", "done"]:
+            signed_in[self.phone()] = time.time()
+            return self.reply(HTTPStatus.NO_CONTENT, b"")
         try:
             if len(parts) == 2 and parts[0] == "button" and parts[1] in BUTTONS:
                 cec({"button": parts[1]})
@@ -371,6 +742,50 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as err:
             return self.reply(HTTPStatus.SERVICE_UNAVAILABLE, f"couchPie isn't answering: {err}")
         self.reply(HTTPStatus.NO_CONTENT, b"")
+
+    def tv_page(self, link):
+        # The Pi's own browser only: tailscale serve also connects from 127.0.0.1, but it says
+        # whom for (X-Forwarded-For)
+        if self.client_address[0] not in ("127.0.0.1", "::1") or self.headers.get("X-Forwarded-For"):
+            return self.reply(HTTPStatus.FORBIDDEN, "only on the TV")
+        wifi = wifi_qr_text()
+        if not wifi:
+            return self.reply(HTTPStatus.SERVICE_UNAVAILABLE, "the Pi's Wi-Fi isn't set up (modules/ap)")
+        link = link or f"http://{AP_ADDRESS}:{PORT}/"
+        try:
+            page = (TV_PAGE.replace("__WIFI_QR__", qr_svg(wifi[0])).replace("__SSID__", wifi[1])
+                    .replace("__LINK_QR__", qr_svg(link)).replace("__LINK__", link.removeprefix("https://").rstrip("/")))
+        except (OSError, subprocess.TimeoutExpired) as err:
+            return self.reply(HTTPStatus.SERVICE_UNAVAILABLE, f"no QR codes: {err} (apt install qrencode)")
+        self.reply(HTTPStatus.OK, page, "text/html; charset=utf-8")
+
+    def assistant(self, action):
+        """The voice assistant: what the phone heard or typed, the answer, and its speech."""
+        length = int(self.headers.get("Content-Length") or 0)
+        if not 0 < length <= MAX_AUDIO:
+            return self.reply(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, json.dumps({"error": "empty or too large"}), "application/json")
+        body = self.rfile.read(length)
+        try:
+            if action == "voice":
+                kind = (self.headers.get("Content-Type") or "audio/webm").split(";")[0]
+                form, form_type = multipart({"language": "pt", "response_format": "json"},
+                                            "phone." + kind.split("/")[-1], kind, body)
+                heard = json.loads(api(STT_URL + "/audio/transcriptions", data=form, kind=form_type)).get("text", "").strip()
+            elif action == "text":
+                heard = str(json.loads(body).get("text", "")).strip()[:2000]
+            elif action == "speak" and TTS_URL:
+                text = str(json.loads(body).get("text", ""))[:2000]
+                return self.reply(HTTPStatus.OK, api(TTS_URL + "/audio/speech", {"input": text}), "audio/wav")
+            else:
+                return self.reply(HTTPStatus.NOT_FOUND, json.dumps({"error": "not here"}), "application/json")
+            answer = ask_assistant(heard, self.phone()) if heard else ""
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode(errors="replace")[-200:]
+            return self.reply(HTTPStatus.BAD_GATEWAY, json.dumps({"error": f"{err.code}: {detail}"}), "application/json")
+        except (OSError, ValueError, KeyError, IndexError) as err:
+            return self.reply(HTTPStatus.BAD_GATEWAY, json.dumps({"error": str(err)}), "application/json")
+        self.reply(HTTPStatus.OK, json.dumps({"heard": heard, "answer": answer}, ensure_ascii=False),
+                   "application/json; charset=utf-8")
 
     def pointer_socket(self):
         key = self.headers.get("Sec-WebSocket-Key", "")
@@ -413,6 +828,37 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+class HttpsServer(ThreadingHTTPServer):
+    """HTTPS on the access point's address, which needn't exist yet (the Wi-Fi may come up later)."""
+    daemon_threads = True
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IP, 15, 1)  # IP_FREEBIND
+        super().server_bind()
+
+    def get_request(self):
+        conn, addr = self.socket.accept()
+        context = tls_context()
+        if not context:
+            conn.close()
+            raise OSError("no certificate")
+        return context.wrap_socket(conn, server_side=True, do_handshake_on_connect=False), addr
+
+    def handle_error(self, request, client_address):
+        pass  # a phone that gives up mid-handshake, or doesn't trust the name, isn't news
+
+
+def serve_https():
+    while not tls_context():  # couchpie-ap-refresh copies the certificate at boot
+        time.sleep(60)
+    print(f"HTTPS for the Pi's Wi-Fi on {AP_ADDRESS}:{TLS_PORT} ({TAILNET_HOST or 'no tailnet name'})", flush=True)
+    HttpsServer((AP_ADDRESS, TLS_PORT), Handler).serve_forever()
+
+
 if __name__ == "__main__":
     print(f"phone remote on port {PORT}", flush=True)
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    threading.Thread(target=serve_https, daemon=True).start()
+    threading.Thread(target=forget_departed, daemon=True).start()
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    server.daemon_threads = True
+    server.serve_forever()

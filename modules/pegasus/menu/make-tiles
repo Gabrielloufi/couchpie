@@ -35,6 +35,7 @@ TILES = {
     "primevideo": ("prime video", ("#1a98ff", "#0f171e"), "primevideo.jpg", "fill 0.68"),
 }
 POWER_COLORS = ("#3a3a40", "#1e1e22")
+REMOTE_COLORS = ("#2c6fbb", "#123a66")
 WAKE_COLORS = ("#1f9d55", "#0f5130")
 
 
@@ -129,6 +130,20 @@ def restart_symbol(draw, cx, cy, r, width):
                   (px - nx * half, py - ny * half)], fill="white")
 
 
+def phone_symbol(draw, cx, cy, r, width):
+    """A phone with a QR code on its screen."""
+    w, h = r * 1.1, r * 1.9
+    draw.rounded_rectangle((cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), radius=r * 0.18,
+                           outline="white", width=width)
+    cell = w * 0.17
+    for dx, dy in ((-1, -1), (1, -1), (-1, 1)):  # the QR code's three corner squares
+        x, y = cx + dx * cell * 1.1, cy + dy * cell * 1.1 - cell * 0.3
+        draw.rectangle((x - cell * 0.8, y - cell * 0.8, x + cell * 0.8, y + cell * 0.8), outline="white", width=width // 3)
+        draw.rectangle((x - cell * 0.3, y - cell * 0.3, x + cell * 0.3, y + cell * 0.3), fill="white")
+    x, y = cx + cell * 1.1, cy + cell * 1.1 - cell * 0.3
+    draw.rectangle((x - cell * 0.3, y - cell * 0.3, x + cell * 0.3, y + cell * 0.3), fill="white")
+
+
 def main():
     OUT.mkdir(exist_ok=True)
     for name, (text, colors, logo, style) in TILES.items():
@@ -141,7 +156,8 @@ def main():
 
     for name, text, symbol, colors in (("reboot", "Reiniciar", restart_symbol, POWER_COLORS),
                                        ("standby", "Modo espera", power_symbol, POWER_COLORS),
-                                       ("wakepc", "Ligar PC", power_symbol, WAKE_COLORS)):
+                                       ("wakepc", "Ligar PC", power_symbol, WAKE_COLORS),
+                                       ("remote", "Controle Remoto", phone_symbol, REMOTE_COLORS)):
         tile = background(*colors)
         symbol(ImageDraw.Draw(tile), SIZE / 2, SIZE * 0.42, SIZE * 0.2, 26)
         label(tile, text, SIZE * 0.8, 64)
